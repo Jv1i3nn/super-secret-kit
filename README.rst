@@ -133,6 +133,17 @@ Compiler et installer le package macOS :
    make VERSION=1.0.0 build-pkg-universal
    sudo installer -pkg bin/ssk-1.0.0-universal.pkg -target /
 
+Mise à jour
+-----------
+
+Pour une installation par package (``.deb`` ou ``.pkg``), télécharger et installer la dernière release GitHub :
+
+.. code-block:: bash
+
+   ssk update
+
+La commande demande le mot de passe ``sudo`` pour installer le package. Une installation depuis les sources se met à jour avec ``git pull && make install``.
+
 Compilation multi-plateformes
 -----------------------------
 
