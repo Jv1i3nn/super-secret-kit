@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag à publier (ex: v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine tag and version
+        id: tag
+        run: |
+          TAG="${{ inputs.tag_name }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          VERSION=$(echo "$TAG" | sed 's/^[^0-9]*//')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build Debian packages
+        run: make VERSION="${{ steps.tag.outputs.version }}" build-deb build-deb-arm64 build-deb-armv6
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: bin/*.deb
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Determine tag and version
+        id: tag
+        run: |
+          TAG="${{ inputs.tag_name }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          VERSION=$(echo "$TAG" | sed 's/^[^0-9]*//')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build macOS packages
+        run: make VERSION="${{ steps.tag.outputs.version }}" build-pkg build-pkg-arm64 build-pkg-universal
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-packages
+          path: bin/*.pkg
+
+  release:
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine tag and version
+        id: tag
+        run: |
+          TAG="${{ inputs.tag_name }}"
+          if [ -z "$TAG" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          VERSION=$(echo "$TAG" | sed 's/^[^0-9]*//')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-packages'
+          merge-multiple: true
+          path: artifacts/
+
+      - name: Generate version badge
+        run: |
+          curl --fail --silent --show-error --get \
+            --data-urlencode 'label=version' \
+            --data-urlencode "message=${{ steps.tag.outputs.version }}" \
+            --data-urlencode 'color=blue' \
+            https://img.shields.io/static/v1 \
+            --output artifacts/version.svg
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: artifacts/*
+          generate_release_notes: true

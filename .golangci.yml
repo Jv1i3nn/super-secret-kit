@@ -1,0 +1,90 @@
+version: "2"
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  tests: true
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gocritic
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+  disable:
+    - gosec
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        - (io.Closer).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.DB).Close
+    gocritic:
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+        - ifElseChain
+        - appendAssign
+      enabled-tags:
+        - diagnostic
+        - performance
+    govet:
+      disable:
+        - fieldalignment
+      enable-all: true
+    misspell:
+      locale: US
+      ignore-rules:
+        - cancelled
+        - connexion
+        - compteurs
+        - demandes
+        - programme
+    revive:
+      rules:
+        - name: var-naming
+          severity: warning
+          disabled: false
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - errcheck
+          - gosec
+          - unparam
+        path: _test\.go
+      - text: Error return value.*is not checked
+        source: defer func\(\) \{ _ =
+      - linters:
+          - errcheck
+        text: Error return value of `fmt.Scanln` is not checked
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - ssk
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

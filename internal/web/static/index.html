@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Secret Kit</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Super Secret Kit</h1>
+            <p class="subtitle">Your command center for daily survival</p>
+        </header>
+
+        <main>
+            <div class="grid">
+                <!-- Arkevia Section -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>📄 Arkevia</h2>
+                        <span class="badge">Docs</span>
+                    </div>
+                    <div class="card-body">
+                        <p>Manage your payslips and documents.</p>
+                        <div class="actions">
+                            <button onclick="runCommand('arkevia', ['--latest'])" class="btn primary">
+                                <span class="icon">⬇️</span> Download Latest
+                            </button>
+                            <button onclick="runCommand('arkevia', [])" class="btn secondary">
+                                <span class="icon">📋</span> List All
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Logtime Section -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>⏱️ Logtime</h2>
+                        <span class="badge">Jira</span>
+                    </div>
+                    <div class="card-body">
+                        <p>Track your time on Jira and Tempo.</p>
+                        <div class="actions">
+                            <button onclick="runCommand('logtime', [])" class="btn primary">
+                                <span class="icon">▶️</span> Log Time
+                            </button>
+                            <button onclick="runCommand('logtime', ['--check'])" class="btn secondary">
+                                <span class="icon">🔍</span> Check Status
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Section -->
+                <div class="card">
+                    <div class="card-header">
+                        <h2>⚙️ System</h2>
+                        <span class="badge">Utils</span>
+                    </div>
+                    <div class="card-body">
+                        <p>System utilities and configuration.</p>
+                        <div class="actions">
+                            <button onclick="runCommand('version', [])" class="btn secondary">
+                                <span class="icon">ℹ️</span> Version
+                            </button>
+                            <button onclick="runCommand('help', [])" class="btn secondary">
+                                <span class="icon">❓</span> Help
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Output Console -->
+            <div class="console-container">
+                <div class="console-header">
+                    <h3>Terminal Output</h3>
+                    <button onclick="clearConsole()" class="btn-icon" title="Clear Console">🗑️</button>
+                </div>
+                <div id="console" class="console">
+                    <div class="console-line system">> Ready to serve.</div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+#!/bin/bash
+set -e
+
+# Configuration des permissions
+chmod 755 /usr/local/bin/ssk
+
+# Obtenir l'utilisateur réel (celui qui a lancé l'installation)
+REAL_USER="${USER}"
+if [ "$REAL_USER" = "root" ]; then
+    # Récupérer l'utilisateur depuis le processus parent
+    REAL_USER=$(stat -f "%Su" /dev/console)
+fi
+
+REAL_HOME=$(eval echo ~$REAL_USER)
+
+# Si on trouve un utilisateur valide, configurer pour lui
+if [ "$REAL_USER" != "root" ] && [ -n "$REAL_USER" ]; then
+    CONFIG_DIR="$REAL_HOME/.ssk"
+
+    # Création du répertoire de configuration
+    if [ ! -d "$CONFIG_DIR" ]; then
+        mkdir -p "$CONFIG_DIR"
+        chown "$REAL_USER:staff" "$CONFIG_DIR"
+        chmod 700 "$CONFIG_DIR"
+    fi
+
+    # Création du fichier de configuration par défaut si inexistant
+    CONFIG_FILE="$CONFIG_DIR/config.yaml"
+    if [ ! -f "$CONFIG_FILE" ]; then
+        cat > "$CONFIG_FILE" <<EOF
+# SSK Configuration
+# Generated on $(date)
+
+# Database path (default: ~/.ssk/credentials.db)
+# database: ~/.ssk/credentials.db
+
+# Encryption settings
+# encryption:
+#   algorithm: aes-256-cbc
+
+# Logging
+# log:
+#   level: info
+#   file: ~/.ssk/ssk.log
+EOF
+        chown "$REAL_USER:staff" "$CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+    fi
+
+    # Init en tant qu'utilisateur réel
+    su - "$REAL_USER" -c "/usr/local/bin/ssk init" || true
+
+    # Message de confirmation (visible dans l'installer)
+    echo ""
+    echo "SSK has been successfully installed!"
+    echo "Configuration directory: $CONFIG_DIR"
+    echo ""
+    echo "View available commands: ssk --help"
+fi
+
+exit 0
