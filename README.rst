@@ -142,7 +142,9 @@ Pour une installation par package (``.deb`` ou ``.pkg``), télécharger et insta
 
    ssk update
 
-La commande demande le mot de passe ``sudo`` pour installer le package. Une installation depuis les sources se met à jour avec ``git pull && make install``.
+La commande demande le mot de passe ``sudo`` pour installer le package. Elle n'installe que si la release est plus récente que la version installée. Une installation depuis les sources se met à jour avec ``git pull && make install``.
+
+``ssk update --check`` indique seulement si une nouvelle version existe. Chaque commande affiche aussi un message sur ``stderr`` lorsqu'une nouvelle version est disponible (vérification au plus une fois par jour, en terminal uniquement, mise en cache dans ``~/.ssk/latest-version``).
 
 Compilation multi-plateformes
 -----------------------------
