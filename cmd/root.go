@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"ssk/internal/version"
 
@@ -30,7 +31,15 @@ Features:
 }
 
 func Execute() error {
-	return rootCmd.Execute()
+	notice := make(chan string, 1)
+	go func() { notice <- updateNotice() }()
+
+	cmd, err := rootCmd.ExecuteC()
+	// stderr keeps stdout (Markdown output) clean; update reports by itself.
+	if msg := <-notice; msg != "" && cmd.Name() != "update" && !strings.HasPrefix(cmd.Name(), "__complete") {
+		fmt.Fprintln(os.Stderr, msg)
+	}
+	return err
 }
 
 func init() {
