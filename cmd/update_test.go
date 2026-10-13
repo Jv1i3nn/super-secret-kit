@@ -29,8 +29,8 @@ func TestIsNewerVersion(t *testing.T) {
 		{"1.10.0", "1.9.0", true},
 		{"2.0.0", "1.99.99", true},
 		{"1.2.0", "1.2.0", false},
-		{"1.1.0", "1.2.0", false}, // no downgrade
-		{"v1.3.0", "1.2.0", true},
+		{"1.1.0", "1.2.0", false},  // no downgrade
+		{"v1.3.0", "1.2.0", false}, // tags are X.Y.Z, no "v"
 		{"1.3.0", "dev", false},
 		{"1.3.0", "1.2.0-3-gabc-dirty", false},
 		{"", "1.2.0", false},

@@ -7,8 +7,8 @@ MAIN_PATH=main.go
 
 # A release is identified by its Git tag.  Outside a release checkout, keep
 # enough Git context to distinguish development builds and local changes.
-# CI can override this with VERSION=<tag-without-v> for release artifacts.
-VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null | sed 's/^[^0-9]*//' || echo "dev")
+# CI can override this with VERSION=<tag> for release artifacts.
+VERSION ?= $(shell git describe --tags --match '[0-9]*.[0-9]*.[0-9]*' --always --dirty 2>/dev/null || echo "dev")
 
 GOCMD=go
 GOBUILD=$(GOCMD) build
