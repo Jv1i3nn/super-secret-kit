@@ -3,11 +3,11 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - '[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag à publier (ex: v1.0.0)'
+        description: 'Tag à publier (ex: 1.0.0)'
         required: true
         type: string
 
@@ -19,16 +19,16 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
-      - name: Determine tag and version
+      - name: Determine version
         id: tag
+        env:
+          TAG: ${{ inputs.tag_name || github.ref_name }}
         run: |
-          TAG="${{ inputs.tag_name }}"
-          if [ -z "$TAG" ]; then
-            TAG="${GITHUB_REF_NAME}"
+          if ! [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag invalide : '$TAG' (attendu X.Y.Z, sans 'v')"
+            exit 1
           fi
-          VERSION=$(echo "$TAG" | sed 's/^[^0-9]*//')
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         with:
@@ -39,7 +39,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Build Debian packages
-        run: make VERSION="${{ steps.tag.outputs.version }}" build-deb build-deb-arm64 build-deb-armv6
+        run: make VERSION="${{ steps.tag.outputs.tag }}" build-deb build-deb-arm64 build-deb-armv6
 
       - uses: actions/upload-artifact@v4
         with:
@@ -49,16 +49,16 @@ jobs:
   build-macos:
     runs-on: macos-latest
     steps:
-      - name: Determine tag and version
+      - name: Determine version
         id: tag
+        env:
+          TAG: ${{ inputs.tag_name || github.ref_name }}
         run: |
-          TAG="${{ inputs.tag_name }}"
-          if [ -z "$TAG" ]; then
-            TAG="${GITHUB_REF_NAME}"
+          if ! [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag invalide : '$TAG' (attendu X.Y.Z, sans 'v')"
+            exit 1
           fi
-          VERSION=$(echo "$TAG" | sed 's/^[^0-9]*//')
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         with:
@@ -69,7 +69,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Build macOS packages
-        run: make VERSION="${{ steps.tag.outputs.version }}" build-pkg build-pkg-arm64 build-pkg-universal
+        run: make VERSION="${{ steps.tag.outputs.tag }}" build-pkg build-pkg-arm64 build-pkg-universal
 
       - uses: actions/upload-artifact@v4
         with:
@@ -80,16 +80,16 @@ jobs:
     needs: [build-linux, build-macos]
     runs-on: ubuntu-latest
     steps:
-      - name: Determine tag and version
+      - name: Determine version
         id: tag
+        env:
+          TAG: ${{ inputs.tag_name || github.ref_name }}
         run: |
-          TAG="${{ inputs.tag_name }}"
-          if [ -z "$TAG" ]; then
-            TAG="${GITHUB_REF_NAME}"
+          if ! [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag invalide : '$TAG' (attendu X.Y.Z, sans 'v')"
+            exit 1
           fi
-          VERSION=$(echo "$TAG" | sed 's/^[^0-9]*//')
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - uses: actions/download-artifact@v4
         with:
@@ -101,7 +101,7 @@ jobs:
         run: |
           curl --fail --silent --show-error --get \
             --data-urlencode 'label=version' \
-            --data-urlencode "message=${{ steps.tag.outputs.version }}" \
+            --data-urlencode "message=${{ steps.tag.outputs.tag }}" \
             --data-urlencode 'color=blue' \
             https://img.shields.io/static/v1 \
             --output artifacts/version.svg

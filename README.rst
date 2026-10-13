@@ -742,7 +742,7 @@ Release
 
 Les releases sont automatisées par GitHub Actions via ``.github/workflows/release.yml``.
 
-Le workflow se déclenche lors du push d’un tag ``v*`` ou manuellement depuis GitHub Actions en indiquant un tag existant. Il transmet le nom du tag (sans le préfixe ``v``) aux builds, construit les packages Debian et macOS, génère un badge de version SVG, puis crée la GitHub Release avec les artefacts attachés.
+Le workflow se déclenche lors du push d’un tag ``X.Y.Z`` (sans préfixe ``v``) ou manuellement depuis GitHub Actions en indiquant un tag existant. Le nom du tag est la version transmise aux builds ; un tag d'un autre format fait échouer le workflow. Il construit les packages Debian et macOS, génère un badge de version SVG, puis crée la GitHub Release avec les artefacts attachés.
 
 Publier une release :
 
@@ -752,8 +752,8 @@ Publier une release :
    make all
 
    # Créer et pousser le tag
-   git tag v2.0.2
-   git push origin v2.0.2
+   git tag 2.0.2
+   git push origin 2.0.2
 
 Artefacts produits automatiquement :
 

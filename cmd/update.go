@@ -80,7 +80,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	pkg := filepath.Join(dir, asset)
-	url := fmt.Sprintf("https://github.com/%s/releases/download/v%s/%s", updateRepo, latest, asset)
+	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/%s", updateRepo, latest, asset)
 	if err := download(client, url, pkg); err != nil {
 		return err
 	}
@@ -97,8 +97,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// latestReleaseVersion returns the latest release tag without its "v" prefix
-// and records it in the update-check cache.
+// latestReleaseVersion returns the latest release tag (X.Y.Z) and records it in the update-check cache.
 func latestReleaseVersion(client *http.Client) (string, error) {
 	latest, err := fetchLatestReleaseVersion(client)
 	if err == nil {
@@ -122,7 +121,7 @@ func fetchLatestReleaseVersion(client *http.Client) (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return "", fmt.Errorf("failed to read latest release: %w", err)
 	}
-	return strings.TrimPrefix(release.TagName, "v"), nil
+	return release.TagName, nil
 }
 
 // releaseAssetName mirrors the package names produced by the Makefile.
@@ -175,7 +174,7 @@ func isNewerVersion(latest, current string) bool {
 
 func parseVersion(v string) ([3]int, bool) {
 	var out [3]int
-	parts := strings.Split(strings.TrimPrefix(v, "v"), ".")
+	parts := strings.Split(v, ".")
 	if len(parts) != 3 {
 		return out, false
 	}
