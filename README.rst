@@ -169,6 +169,15 @@ Cela crée le répertoire de configuration dans ``~/.ssk/`` avec :
 
 Le fichier ``config.yaml`` est optionnel. L'URL Jira est demandée à la première utilisation d'une commande Jira ou Tempo si elle n'est pas déjà configurée.
 
+Chiffrement local
+-----------------
+
+Les nouveaux identifiants et sessions Horoquartz sont chiffrés avec AES-GCM au format ``ssk:v2:``. La clé utilise le nom de machine et la totalité de la passphrase ; toute modification des données chiffrées est détectée.
+
+Le format historique AES-CBC compatible PHP reste lisible, sans réécriture automatique des données existantes. Ce format tronquait la clé à 32 octets : avec un nom de machine long, la passphrase pouvait être partiellement ou entièrement ignorée. Réenregistrer les identifiants et renouveler les sessions permet de les stocker au nouveau format.
+
+Les anciennes versions de SSK et l'implémentation PHP ne peuvent pas lire le nouveau format. Conservez le fichier ``.passphrase`` et le nom de machine pour continuer à déchiffrer vos données.
+
 URL Jira
 --------
 

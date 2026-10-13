@@ -4,11 +4,15 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
+
+const encryptionPrefixV2 = "ssk:v2:"
 
 type EncryptionService interface {
 	Encrypt(plaintext string) (string, error)
@@ -42,33 +46,62 @@ func (s *encryptionService) Encrypt(plaintext string) (string, error) {
 		return "", nil
 	}
 
-	block, err := aes.NewCipher([]byte(s.get32ByteKey()))
+	aead, err := s.authenticatedCipher()
 	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %w", err)
+		return "", err
 	}
 
-	iv := make([]byte, aes.BlockSize)
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return "", fmt.Errorf("failed to generate IV: %w", err)
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
-	plaintextBytes := s.pkcs7Pad([]byte(plaintext), aes.BlockSize)
-	mode := cipher.NewCBCEncrypter(block, iv)
-	ciphertext := make([]byte, len(plaintextBytes))
-	mode.CryptBlocks(ciphertext, plaintextBytes)
-
-	// PHP's openssl_encrypt returns base64, so we match that behavior:
-	// base64(IV + base64(encrypted))
-	encryptedBase64 := base64.StdEncoding.EncodeToString(ciphertext)
-	result := append(iv, []byte(encryptedBase64)...)
-	return base64.StdEncoding.EncodeToString(result), nil
+	payload := aead.Seal(nonce, nonce, []byte(plaintext), []byte(encryptionPrefixV2))
+	return encryptionPrefixV2 + base64.StdEncoding.EncodeToString(payload), nil
 }
 
 func (s *encryptionService) Decrypt(encodedCiphertext string) (string, error) {
 	if encodedCiphertext == "" {
 		return "", nil
 	}
+	if strings.HasPrefix(encodedCiphertext, encryptionPrefixV2) {
+		payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(encodedCiphertext, encryptionPrefixV2))
+		if err != nil {
+			return "", fmt.Errorf("failed to decode encrypted data: %w", err)
+		}
+		aead, err := s.authenticatedCipher()
+		if err != nil {
+			return "", err
+		}
+		if len(payload) < aead.NonceSize()+aead.Overhead() {
+			return "", fmt.Errorf("ciphertext too short")
+		}
+		plaintext, err := aead.Open(nil, payload[:aead.NonceSize()], payload[aead.NonceSize():], []byte(encryptionPrefixV2))
+		if err != nil {
+			return "", fmt.Errorf("failed to authenticate encrypted data: %w", err)
+		}
+		return string(plaintext), nil
+	}
+	return s.decryptLegacy(encodedCiphertext)
+}
 
+func (s *encryptionService) authenticatedCipher() (cipher.AEAD, error) {
+	// Hash the full hostname and passphrase; truncation could discard the secret.
+	key := sha256.Sum256([]byte(s.passphrase))
+	block, err := aes.NewCipher(key[:])
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher: %w", err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create authenticated cipher: %w", err)
+	}
+	return aead, nil
+}
+
+// decryptLegacy reads the PHP-compatible base64(IV + base64(AES-CBC)) format.
+// Its historical key derivation is preserved only for reading existing data.
+func (s *encryptionService) decryptLegacy(encodedCiphertext string) (string, error) {
 	data, err := base64.StdEncoding.DecodeString(encodedCiphertext)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode base64: %w", err)
@@ -84,6 +117,9 @@ func (s *encryptionService) Decrypt(encodedCiphertext string) (string, error) {
 	ciphertext, err := base64.StdEncoding.DecodeString(string(encryptedBase64))
 	if err != nil {
 		return "", fmt.Errorf("failed to decode encrypted data: %w", err)
+	}
+	if len(ciphertext) == 0 || len(ciphertext)%aes.BlockSize != 0 {
+		return "", fmt.Errorf("invalid ciphertext length")
 	}
 
 	block, err := aes.NewCipher([]byte(s.get32ByteKey()))
@@ -114,15 +150,6 @@ func (s *encryptionService) get32ByteKey() string {
 	return key
 }
 
-func (s *encryptionService) pkcs7Pad(data []byte, blockSize int) []byte {
-	padding := blockSize - (len(data) % blockSize)
-	padText := make([]byte, padding)
-	for i := range padText {
-		padText[i] = byte(padding)
-	}
-	return append(data, padText...)
-}
-
 func (s *encryptionService) pkcs7Unpad(data []byte) ([]byte, error) {
 	length := len(data)
 	if length == 0 {
@@ -130,7 +157,7 @@ func (s *encryptionService) pkcs7Unpad(data []byte) ([]byte, error) {
 	}
 
 	padding := int(data[length-1])
-	if padding > length || padding > aes.BlockSize {
+	if padding == 0 || padding > length || padding > aes.BlockSize {
 		return nil, fmt.Errorf("invalid padding size")
 	}
 
