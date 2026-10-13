@@ -9,10 +9,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"ssk/internal/version"
 )
@@ -21,7 +23,10 @@ const (
 	updateRepo        = "Jv1i3nn/super-secret-kit"
 	packagedBinary    = "/usr/local/bin/ssk"
 	updateHTTPTimeout = 5 * time.Minute
+	updateCheckEvery  = 24 * time.Hour
 )
+
+var updateCheckOnly bool
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
@@ -32,10 +37,26 @@ and install it with sudo. Only works for package installs in /usr/local/bin.`,
 }
 
 func init() {
+	updateCmd.Flags().BoolVar(&updateCheckOnly, "check", false, "only check whether a new version is available")
 	rootCmd.AddCommand(updateCmd)
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
+	client := &http.Client{Timeout: updateHTTPTimeout}
+	latest, err := latestReleaseVersion(client)
+	if err != nil {
+		return err
+	}
+	current := version.GetVersion()
+	if !isNewerVersion(latest, current) {
+		fmt.Printf("✅ SSK est à jour (v%s, dernière release v%s)\n", current, latest)
+		return nil
+	}
+	if updateCheckOnly {
+		fmt.Printf("🆕 Nouvelle version disponible : v%s → v%s (lancer 'ssk update')\n", current, latest)
+		return nil
+	}
+
 	exe, err := os.Executable()
 	if err == nil {
 		exe, err = filepath.EvalSymlinks(exe)
@@ -45,17 +66,6 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 	if exe != packagedBinary {
 		return fmt.Errorf("ssk is not installed from a package (%s); update it with git pull && make install", exe)
-	}
-
-	client := &http.Client{Timeout: updateHTTPTimeout}
-	latest, err := latestReleaseVersion(client)
-	if err != nil {
-		return err
-	}
-	current := version.GetVersion()
-	if latest == current {
-		fmt.Printf("✅ SSK est à jour (v%s)\n", current)
-		return nil
 	}
 
 	asset, err := releaseAssetName(runtime.GOOS, runtime.GOARCH, latest)
@@ -87,8 +97,17 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// latestReleaseVersion returns the latest release tag without its "v" prefix.
+// latestReleaseVersion returns the latest release tag without its "v" prefix
+// and records it in the update-check cache.
 func latestReleaseVersion(client *http.Client) (string, error) {
+	latest, err := fetchLatestReleaseVersion(client)
+	if err == nil {
+		_ = os.WriteFile(updateCachePath(), []byte(latest), 0600)
+	}
+	return latest, err
+}
+
+func fetchLatestReleaseVersion(client *http.Client) (string, error) {
 	resp, err := client.Get("https://api.github.com/repos/" + updateRepo + "/releases/latest")
 	if err != nil {
 		return "", fmt.Errorf("failed to check latest release: %w", err)
@@ -136,4 +155,64 @@ func download(client *http.Client, url, dest string) error {
 		return fmt.Errorf("failed to download %s: %w", url, err)
 	}
 	return f.Close()
+}
+
+// isNewerVersion reports whether latest > current. Only plain X.Y.Z release
+// versions compare: dev builds ("dev", "1.2.0-3-gabc-dirty") never update.
+func isNewerVersion(latest, current string) bool {
+	l, okL := parseVersion(latest)
+	c, okC := parseVersion(current)
+	if !okL || !okC {
+		return false
+	}
+	for i := range l {
+		if l[i] != c[i] {
+			return l[i] > c[i]
+		}
+	}
+	return false
+}
+
+func parseVersion(v string) ([3]int, bool) {
+	var out [3]int
+	parts := strings.Split(strings.TrimPrefix(v, "v"), ".")
+	if len(parts) != 3 {
+		return out, false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return out, false
+		}
+		out[i] = n
+	}
+	return out, true
+}
+
+// updateCachePath holds the latest known release; its mtime is the last check.
+func updateCachePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".ssk", "latest-version")
+}
+
+// updateNotice returns a "new version available" message, or "" if none.
+// It hits GitHub at most once per updateCheckEvery, and only for a terminal.
+func updateNotice() string {
+	if !term.IsTerminal(int(os.Stderr.Fd())) {
+		return ""
+	}
+	path := updateCachePath()
+	cached, _ := os.ReadFile(path)
+	latest := strings.TrimSpace(string(cached))
+	if info, err := os.Stat(path); err != nil || time.Since(info.ModTime()) > updateCheckEvery {
+		if fetched, err := fetchLatestReleaseVersion(&http.Client{Timeout: 2 * time.Second}); err == nil {
+			latest = fetched
+		}
+		// Rewrite even on failure so an offline machine waits a full period.
+		_ = os.WriteFile(path, []byte(latest), 0600)
+	}
+	if !isNewerVersion(latest, version.GetVersion()) {
+		return ""
+	}
+	return fmt.Sprintf("\n🆕 SSK v%s est disponible (installée : v%s). Lancer 'ssk update'.", latest, version.GetVersion())
 }

@@ -19,3 +19,24 @@ func TestReleaseAssetName(t *testing.T) {
 		t.Error("windows: expected error")
 	}
 }
+
+func TestIsNewerVersion(t *testing.T) {
+	for _, tc := range []struct {
+		latest, current string
+		want            bool
+	}{
+		{"1.2.0", "1.1.9", true},
+		{"1.10.0", "1.9.0", true},
+		{"2.0.0", "1.99.99", true},
+		{"1.2.0", "1.2.0", false},
+		{"1.1.0", "1.2.0", false}, // no downgrade
+		{"v1.3.0", "1.2.0", true},
+		{"1.3.0", "dev", false},
+		{"1.3.0", "1.2.0-3-gabc-dirty", false},
+		{"", "1.2.0", false},
+	} {
+		if got := isNewerVersion(tc.latest, tc.current); got != tc.want {
+			t.Errorf("isNewerVersion(%q, %q) = %v, want %v", tc.latest, tc.current, got, tc.want)
+		}
+	}
+}
