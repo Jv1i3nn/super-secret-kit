@@ -53,8 +53,12 @@ func (c *Client) Get(endpoint string, params map[string]string) (*http.Response,
 	if c.session.HQToken != "" {
 		req.Header.Set("x-hq-token", c.session.HQToken)
 	}
-	if c.session.RoleID != "" {
-		req.Header.Set("x-hq-roleid", c.session.RoleID)
+	roleID := c.session.RoleID
+	if r := params["roleId"]; r != "" {
+		roleID = r
+	}
+	if roleID != "" {
+		req.Header.Set("x-hq-roleid", roleID)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	req.Header.Set("Referer", fmt.Sprintf("%s/ux/home", c.baseURL))
@@ -182,34 +186,66 @@ func (c *Client) CreateRequest(payload CreateRequestPayload) (*CreateRequestResp
 
 // GetCounters récupère les compteurs à une date donnée
 func (c *Client) GetCounters(date time.Time) (*CountersResponse, error) {
-	endpoint := "/hq-web/api/v1/self/counters"
-
 	dates := []time.Time{date}
 	today := time.Now()
 	if date.Format("2006-01-02") != today.Format("2006-01-02") {
 		dates = append(dates, today)
 	}
 
+	// Un employé peut avoir plusieurs rôles : le rôle capturé au login n'a pas
+	// forcément accès aux compteurs, on retente alors avec le rôle par défaut.
+	roles := []string{c.session.RoleID}
+	if defaultRole := c.session.RollNumber + "/0002"; c.session.RollNumber != "" && defaultRole != c.session.RoleID {
+		roles = append(roles, defaultRole)
+	}
+
+	var failures []string
+	hasInvalidToken := false
+	for _, role := range roles {
+		counters, roleFailures, invalidToken := c.fetchCounters(role, dates)
+		if len(counters) > 0 {
+			res := &CountersResponse{Status: "SUCCESS"}
+			res.Content.Counters = counters
+			return res, nil
+		}
+		failures = append(failures, roleFailures...)
+		hasInvalidToken = hasInvalidToken || invalidToken
+	}
+
+	if hasInvalidToken {
+		return nil, ErrInvalidToken
+	}
+	if len(failures) > 0 {
+		return nil, fmt.Errorf("horoquartz a refusé l'accès aux compteurs: %s", failures[0])
+	}
+
+	return &CountersResponse{Status: "SUCCESS"}, nil
+}
+
+// fetchCounters interroge les compteurs pour un rôle et renvoie les erreurs de l'API
+func (c *Client) fetchCounters(roleID string, dates []time.Time) ([]Counter, []string, bool) {
+	endpoint := "/hq-web/api/v1/self/counters"
+
 	// Seules les fonctions autorisées pour l'employé (WA12, WD05, WD01, WD11, WD34, WD36)
 	functions := []string{"WA12", "WD05", "WD01", "WD11", "WD34", "WD36"}
 
 	allCounters := []Counter{}
 	seenCodes := make(map[string]bool)
+	var failures []string
 	hasInvalidToken := false
 
 	for _, d := range dates {
 		for _, fn := range functions {
 			params := map[string]string{
-				"roleId":     c.session.RoleID,
+				"roleId":     roleID,
 				"rollNumber": c.session.RollNumber,
 				"start":      d.Format("2006-01-02"),
-			}
-			if fn != "" {
-				params["function"] = fn
+				"function":   fn,
 			}
 
 			resp, err := c.Get(endpoint, params)
 			if err != nil {
+				failures = append(failures, err.Error())
 				continue
 			}
 
@@ -217,7 +253,7 @@ func (c *Client) GetCounters(date time.Time) (*CountersResponse, error) {
 			resp.Body.Close()
 
 			if viper.GetBool("verbose") {
-				fmt.Printf("🔍 GET %s (fn=%q start=%s) => Status %d: %s\n", endpoint, fn, d.Format("2006-01-02"), resp.StatusCode, string(bodyBytes))
+				fmt.Printf("🔍 GET %s (role=%s fn=%q start=%s) => Status %d: %s\n", endpoint, roleID, fn, d.Format("2006-01-02"), resp.StatusCode, string(bodyBytes))
 			}
 
 			bodyStr := string(bodyBytes)
@@ -225,32 +261,32 @@ func (c *Client) GetCounters(date time.Time) (*CountersResponse, error) {
 				hasInvalidToken = true
 			}
 
-			if resp.StatusCode == http.StatusOK {
-				var countersResp CountersResponse
-				if err := json.Unmarshal(bodyBytes, &countersResp); err == nil && countersResp.Status == "SUCCESS" {
-					// 1. Extraire depuis employeeCounters
-					for _, rc := range countersResp.Content.EmployeeCounters {
-						c := rc.ToCounter()
-						if c.Code != "" && !seenCodes[c.Code] {
-							seenCodes[c.Code] = true
-							allCounters = append(allCounters, c)
-						}
-					}
-					// 2. Extraire depuis employeeDailyCounters
-					for _, rc := range countersResp.Content.EmployeeDailyCounters {
-						c := rc.ToCounter()
-						if c.Code != "" && !seenCodes[c.Code] {
-							seenCodes[c.Code] = true
-							allCounters = append(allCounters, c)
-						}
-					}
-					// 3. Extraire depuis counters (legacy/fallback)
-					for _, counter := range countersResp.Content.Counters {
-						if counter.Code != "" && !seenCodes[counter.Code] {
-							seenCodes[counter.Code] = true
-							allCounters = append(allCounters, counter)
-						}
-					}
+			if resp.StatusCode != http.StatusOK {
+				failures = append(failures, fmt.Sprintf("status %d", resp.StatusCode))
+				continue
+			}
+
+			var countersResp CountersResponse
+			if err := json.Unmarshal(bodyBytes, &countersResp); err != nil {
+				failures = append(failures, fmt.Sprintf("réponse illisible: %v", err))
+				continue
+			}
+			if countersResp.Status != "SUCCESS" {
+				for _, m := range countersResp.Messages {
+					failures = append(failures, fmt.Sprintf("%s %s", m.Code, m.Reason))
+				}
+				continue
+			}
+
+			// 1. employeeCounters, 2. employeeDailyCounters, 3. counters (legacy/fallback)
+			var counters []Counter
+			for _, rc := range append(countersResp.Content.EmployeeCounters, countersResp.Content.EmployeeDailyCounters...) {
+				counters = append(counters, rc.ToCounter())
+			}
+			for _, counter := range append(counters, countersResp.Content.Counters...) {
+				if counter.Code != "" && !seenCodes[counter.Code] {
+					seenCodes[counter.Code] = true
+					allCounters = append(allCounters, counter)
 				}
 			}
 		}
@@ -259,13 +295,5 @@ func (c *Client) GetCounters(date time.Time) (*CountersResponse, error) {
 		}
 	}
 
-	if len(allCounters) == 0 && hasInvalidToken {
-		return nil, ErrInvalidToken
-	}
-
-	res := &CountersResponse{
-		Status: "SUCCESS",
-	}
-	res.Content.Counters = allCounters
-	return res, nil
+	return allCounters, failures, hasInvalidToken
 }

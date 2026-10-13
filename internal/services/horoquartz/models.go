@@ -51,8 +51,9 @@ type Counter struct {
 
 // CountersResponse représente la réponse API Horoquartz
 type CountersResponse struct {
-	Status  string `json:"status"`
-	Content struct {
+	Status   string       `json:"status"`
+	Messages []APIMessage `json:"messages"`
+	Content  struct {
 		EmployeeCounters      []HQRawCounter `json:"employeeCounters"`
 		EmployeeDailyCounters []HQRawCounter `json:"employeeDailyCounters"`
 		Counters              []Counter      `json:"counters"`
