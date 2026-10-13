@@ -35,3 +35,5 @@ config.yaml
 jira-artifacts/
 
 .idea
+.serena/
+.tokensave/
