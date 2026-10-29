@@ -381,6 +381,8 @@ Rechercher des tickets avec une requête JQL. Les résultats sont regroupés par
 
 La recherche parcourt toutes les pages de l'API Jira et déduplique les tickets par ID.
 Une erreur sur une page fait échouer la commande sans imprimer de résultats partiels.
+La recherche est limitée à 100 pages (100 tickets demandés par page). Si des pages
+restent à récupérer à cette limite, précisez la JQL pour réduire la sélection.
 ``--format text`` conserve la sortie habituelle ; ``--format json`` conserve l'ordre
 de recherche plutôt que le regroupement par statut.
 
