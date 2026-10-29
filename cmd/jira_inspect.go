@@ -33,6 +33,7 @@ code agent, not a polished user-facing briefing.`,
 
 func init() {
 	jiraCmd.AddCommand(jiraInspectCmd)
+	addJiraHistoryFlags(jiraInspectCmd)
 	jiraInspectCmd.Flags().String("format", "markdown", "output format (markdown, json)")
 	jiraInspectCmd.Flags().IntVar(&jiraInspectDepth, "depth", 2, "relationship traversal depth")
 	jiraInspectCmd.Flags().IntVar(&jiraInspectMaxRelated, "max-related", 10, "maximum number of related Jira tickets to fetch")
@@ -45,6 +46,11 @@ func runJiraInspect(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	opts, err := jiraHistoryOptions(cmd, started)
+	if err != nil {
+		return err
+	}
+	opts.Depth, opts.MaxRelated = jiraInspectDepth, jiraInspectMaxRelated
 	verboseEnabled := verbose || viper.GetBool("verbose")
 	ticketKey := strings.TrimSpace(args[0])
 	if ticketKey == "" {
@@ -71,10 +77,6 @@ func runJiraInspect(cmd *cobra.Command, args []string) error {
 		ctx = context.Background()
 	}
 
-	opts := services.TicketInspectionOptions{
-		Depth:      jiraInspectDepth,
-		MaxRelated: jiraInspectMaxRelated,
-	}
 	if format == "json" {
 		result, exportErr := briefingService.GenerateTicketInspectionExport(ctx, effectiveJiraWorkspace(), jiraClient.BaseURL(), ticketKey, opts, jiraInspectDownloadDir, started)
 		if exportErr != nil {

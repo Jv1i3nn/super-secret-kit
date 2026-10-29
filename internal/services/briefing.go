@@ -21,8 +21,11 @@ const (
 )
 
 type TicketInspectionOptions struct {
-	Depth      int
-	MaxRelated int
+	Depth          int
+	MaxRelated     int
+	ChangesPeriod  *JiraPeriod
+	CommentsPeriod *JiraPeriod
+	CommentsLimit  *int
 }
 
 type BriefingJiraClient interface {
@@ -112,7 +115,11 @@ func (s *BriefingService) GenerateTicketInspectionWithOptions(ctx context.Contex
 		return "", err
 	}
 
-	context, err := BuildInspectionContext(rootKey, tickets)
+	histories, err := s.inspectionHistory(ctx, tickets, opts)
+	if err != nil {
+		return "", err
+	}
+	context, err := renderInspectionHistory(rootKey, tickets, nil, histories)
 	if err != nil {
 		return "", fmt.Errorf("failed to build Jira inspection context: %w", err)
 	}
@@ -136,8 +143,12 @@ func (s *BriefingService) GenerateTicketInspectionWithDownloads(ctx context.Cont
 	if !ok {
 		return "", errors.New("jira client does not support attachment downloads")
 	}
+	histories, err := s.inspectionHistory(ctx, tickets, opts)
+	if err != nil {
+		return "", err
+	}
 	attachments := downloadJiraAttachments(ctx, tickets, directory, downloader)
-	context, err := buildInspectionContext(rootKey, tickets, attachments)
+	context, err := renderInspectionHistory(rootKey, tickets, attachments, histories)
 	if err != nil {
 		return "", fmt.Errorf("failed to build Jira inspection context: %w", err)
 	}
@@ -147,6 +158,9 @@ func (s *BriefingService) GenerateTicketInspectionWithDownloads(ctx context.Cont
 
 func (s *BriefingService) inspectionTickets(ctx context.Context, issueKey string, opts TicketInspectionOptions) (string, []jira.Ticket, error) {
 	_ = ctx
+	if err := opts.validateHistory(); err != nil {
+		return "", nil, err
+	}
 	issueKey = strings.TrimSpace(issueKey)
 	if issueKey == "" {
 		return "", nil, errors.New("jira ticket key cannot be empty")

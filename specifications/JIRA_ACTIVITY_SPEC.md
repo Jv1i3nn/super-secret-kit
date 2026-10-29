@@ -1,7 +1,8 @@
 # Jira Activity Export Specification
 
-Status: phase 1 implemented on `feat/jira-structured-output`.
-Phases 2–4 remain proposed. The JSON contract is documented in `README.rst`.
+Status: phase 1 implemented on `feat/jira-structured-output`; phase 2 implemented
+separately on `feat/jira-history`. Phases 3–4 remain proposed. The JSON contract is
+documented in `README.rst`.
 The new repository uses `default` as the default workspace; named workspaces in
 examples must be configured explicitly.
 
@@ -55,8 +56,16 @@ Markdown/text output unless a documented correctness fix requires otherwise.
 - Validation: dependencies downloaded; `go mod tidy -diff`, module verification,
   pinned-version lint, vet, Linux race-enabled tests, and build pass. Linux/macOS
   CI passed for the code changes at `d1c8727`. No live Jira account was used.
-- Phases 2–4: pending; no changelog/comment-period flags, compact controls,
-  cancellation/retry policy, or `jira activity` command are implemented yet.
+- Phase 2: paginated per-issue changelogs and comments, validated half-open periods,
+  newest qualifying comment selection, completeness metadata, and opt-in JSON and
+  Markdown inspection output. A source is capped at 100 pages per issue; missing
+  source IDs, essential dates, or inconsistent pagination fail complete retrieval.
+  Without history flags, the phase 1 behavior remains unchanged. Phase 2 local
+  Linux checks pass: race-enabled tests, pinned-version lint, module verification,
+  `go mod tidy -diff`, vet, and build. Phase 2 macOS CI is pending; no live Jira
+  account was used.
+- Phases 3–4: pending; compact description/body controls, end-to-end cancellation,
+  request timeout/retry policy, and `jira activity` are not implemented yet.
 
 ## Search Pagination
 
@@ -114,7 +123,7 @@ comment list with `retrieval_complete: false` must not imply no discussion.
 
 ## Dated Change History
 
-Proposed inspection options:
+Inspection options:
 
 ```bash
 ssk jira inspect PROJ-123 --depth 0 --max-related 0 \
@@ -143,7 +152,7 @@ Missing or deleted historical content must not be reconstructed or guessed.
 
 ## Explicit Comment Retrieval
 
-Proposed inspection options:
+Inspection options:
 
 ```bash
 ssk jira inspect PROJ-123 --depth 0 --max-related 0 \
@@ -272,6 +281,7 @@ Use HTTP fixtures and CLI tests; no live Jira account is required for CI.
 ## References
 
 - Current [Jira command documentation](../README.rst).
+- [Atlassian comment link convention](https://support.atlassian.com/jira/kb/a-customer-notification-was-sent-from-an-internal-comment-added-to-a-jsm-ticket/).
 - [Atlassian enhanced JQL search and pagination](https://confluence.atlassian.com/jirakb/how-to-return-issues-from-a-jql-query-using-rest-api-1289424308.html).
 - [Jira issue changelog API, including bulk retrieval](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/).
 - [Jira issue comments API](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-comments/).
