@@ -506,10 +506,10 @@ caractères pour les commentaires est signalée séparément de la limite de sé
 Contrat JSON Jira (version 1)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Les sorties JSON de ``query`` et ``inspect`` contiennent un seul document UTF-8 sur
+Les sorties JSON de ``query``, ``inspect`` et ``activity`` contiennent un seul document UTF-8 sur
 ``stdout`` ; les diagnostics restent sur ``stderr``, y compris en mode verbose.
 Le document indique ``schema_version: 1``, ``kind`` (``jira.query`` ou
-``jira.inspect``), l'espace et l'URL du site, les dates UTC de collecte, la JQL
+``jira.inspect`` ou ``jira.activity``), l'espace et l'URL du site, les dates UTC de collecte, la JQL
 (``null`` pour l'inspection), le nombre réel de tickets distincts et l'ordre de sortie.
 Les champs des tickets sont normalisés : identifiants, URL, résumé, description,
 projet, statut et catégorie native, résolution, dates, assignation et relations.
@@ -546,10 +546,61 @@ correspondants/retournés et les événements triés chronologiquement. Chaque �
 conserve ``changelog_id`` et ``item_index`` comme identité source, la date UTC,
 l'auteur et les valeurs avant/après du champ. Plusieurs transitions d'un même
 ticket restent distinctes. Les champs courants restent séparés de ces événements.
-Le JSON n'exporte pas les données du panneau de développement. Avec
+Le JSON de ``query`` et ``inspect`` n'exporte pas les données du panneau de développement. Avec
 ``--download-attachments``, il inclut les chemins locaux et les éventuelles erreurs par pièce jointe ; ces erreurs ne font pas échouer
 l'inspection, comme en Markdown. Les champs courants reflètent la collecte, pas un
 état historique ou un instantané transactionnel de Jira.
+
+``jira activity``
+~~~~~~~~~~~~~~~~~
+
+Exporter les tickets potentiellement actifs sur une période, avec leurs champs
+courants, changements et commentaires datés. La sortie par défaut est en Markdown.
+
+.. code-block:: bash
+
+   ssk jira activity --since 2026-10-21T10:00:00Z --until 2026-10-28T11:00:00Z \
+     --format json --workers 6 --description-lines 10 --comments-limit 5 \
+     --comment-chars 2000 --include-development=false
+
+``--since`` est obligatoire ; ``--until`` est exclu et vaut le début de la commande
+s'il est omis. Les dates exigent un fuseau RFC 3339. ``--workers`` accepte 1 à 32
+récupérations simultanées (6 par défaut). Les contrôles de volume d'``inspect``,
+``--workspace`` et ``--timeout`` s'appliquent aussi. Les périodes indépendantes
+``--changes-*`` et ``--comments-since/until`` ne sont pas acceptées : toutes les
+sources utilisent la même période.
+
+La sélection utilise ``updated >= <millisecondes Unix>`` sans guillemets, avec la
+borne basse arrondie vers le bas à la milliseconde. Ce format absolu évite les
+ambiguïtés de fuseau et de changement d'heure des dates JQL textuelles. Il n'y a
+pas de borne haute sur ``updated`` : un ticket modifié après ``until`` peut porter
+des événements de la période. Tous les candidats visibles de cette sélection
+restent dans l'export ; ceux sans événement daté visible sont signalés par
+``has_detailed_evidence: false``. Les limites de pages et d'accès restent celles
+des commandes précédentes. Une erreur requise annule les autres récupérations et
+la commande échoue sans document partiel.
+
+Le JSON porte ``kind: jira.activity`` et conserve le contrat version 1. Les tickets
+sont triés par mise à jour courante décroissante (date inconnue en dernier), puis
+clé et ID croissants. Chaque ``activity.events`` est une chronologie par date et
+identité source, distincte des champs courants. Les commentaires détaillés restent
+sélectionnés du plus récent au plus ancien ; leur limite ne retire pas les IDs et
+dates de la chronologie. Les compteurs utilisent toutes les données correspondantes
+avant les limites de corps ou de nombre.
+
+``activity.summary`` sépare les statuts courants des créations, tickets avec
+changements de statut, événements de transition, commentaires nouveaux et édités.
+Chaque compteur indique son unité. Un commentaire créé puis édité dans la période
+peut contribuer aux deux compteurs. Les dates de création indisponibles et les
+tickets sans preuve datée ont leurs propres compteurs. Les catégories natives et
+résolutions restent celles de Jira, sans regroupement métier déduit des noms.
+
+L'export décrit les sources visibles sélectionnées, pas un état historique ou un
+instantané transactionnel. Les suppressions, restrictions et éditions intermédiaires
+de commentaires ne sont pas reconstituées. Avec le panneau de développement activé
+(par défaut), ``activity`` peut aussi fournir des liens normalisés dans
+``development`` ; cet enrichissement est optionnel et sa complétude reste inconnue.
+Les paramètres et identifiants d'authentification des URL ne sont pas exportés.
 
 ``jira comment``
 ~~~~~~~~~~~~~~~~
