@@ -33,10 +33,12 @@ type User struct {
 }
 
 type Comment struct {
-	ID      string                 `json:"id"`
-	Self    string                 `json:"self"`
-	Created string                 `json:"created"`
-	Body    map[string]interface{} `json:"body"`
+	ID      string      `json:"id"`
+	Self    string      `json:"self"`
+	Created string      `json:"created"`
+	Body    interface{} `json:"body"`
+	Updated string      `json:"updated"`
+	Author  *User       `json:"author"`
 }
 
 func (t Ticket) Summary() string {

@@ -78,15 +78,24 @@ type JiraExportLink struct {
 }
 
 type JiraExportComment struct {
-	ID        *string         `json:"id"`
-	Author    *JiraExportUser `json:"author"`
-	CreatedAt *time.Time      `json:"created_at"`
-	UpdatedAt *time.Time      `json:"updated_at"`
-	Body      *string         `json:"body"`
+	ID              *string         `json:"id"`
+	URL             *string         `json:"url"`
+	Author          *JiraExportUser `json:"author"`
+	CreatedAt       *time.Time      `json:"created_at"`
+	UpdatedAt       *time.Time      `json:"updated_at"`
+	Body            *string         `json:"body"`
+	ActivityAt      *time.Time      `json:"activity_at"`
+	CreatedInPeriod *bool           `json:"created_in_period"`
+	EditedInPeriod  *bool           `json:"edited_in_period"`
 }
 
 type JiraExportComments struct {
 	Source            string              `json:"source"`
+	Period            *JiraPeriod         `json:"period"`
+	RetrievedCount    *int                `json:"retrieved_count"`
+	MatchingCount     *int                `json:"matching_count"`
+	Limit             *int                `json:"limit"`
+	Ordering          *string             `json:"ordering"`
 	RetrievalComplete bool                `json:"retrieval_complete"`
 	OutputTruncated   bool                `json:"output_truncated"`
 	ReturnedCount     int                 `json:"returned_count"`
@@ -121,6 +130,7 @@ type JiraExportIssue struct {
 	Labels      []string               `json:"labels"`
 	FixVersions []JiraExportNamedValue `json:"fix_versions"`
 	Comments    *JiraExportComments    `json:"comments"`
+	Changes     *JiraExportChanges     `json:"changes"`
 	Attachments []JiraExportAttachment `json:"attachments"`
 }
 
@@ -237,6 +247,11 @@ func (s *BriefingService) GenerateTicketInspectionExport(ctx context.Context, wo
 	if err != nil {
 		return nil, err
 	}
+	histories, err := s.inspectionHistory(ctx, tickets, opts)
+	if err != nil {
+		return nil, err
+	}
+	applyInspectionHistory(result, histories)
 	result.Ordering = "root first, then breadth-first related issues"
 	result.Inspection = &JiraExportInspection{RootKey: rootKey, Depth: opts.Depth, MaxRelated: opts.MaxRelated}
 	included := make(map[string]bool, len(tickets))
