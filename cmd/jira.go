@@ -46,7 +46,7 @@ func initJiraClientForWorkspace(verboseEnabled bool, workspace string) (*jira.Cl
 	}
 	jiraVerbose(verboseEnabled, "using Jira workspace %q (%s)", workspace, apiURL)
 
-	if operationErr := database.Connect(cfg.GetDatabasePath(), verboseEnabled); operationErr != nil {
+	if operationErr := database.Connect(cfg.GetDatabasePath(), false); operationErr != nil {
 		return nil, nil, fmt.Errorf("failed to connect to database: %w", operationErr)
 	}
 	cleanup := func() { _ = database.Close() }
