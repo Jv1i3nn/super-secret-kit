@@ -7,14 +7,14 @@ examples must be configured explicitly.
 
 ## Objective
 
-Make SSK a reliable source of structured Jira evidence for weekly newsletters and
-other agent workflows. Consumers should receive complete issue selections,
+Make SSK a reliable source of structured Jira evidence for reporting and
+agent workflows. Consumers should receive complete issue selections,
 current issue context, and dated changes without parsing presentation Markdown
 or compensating for missing API pagination.
 
-SSK collects and normalizes evidence. Tideline or another caller remains
-responsible for scheduling, model selection, editorial policy, HTML generation,
-publication, and email. SSK must not call an LLM or infer organizational intent.
+SSK collects and normalizes evidence. Consumers remain responsible for downstream
+processing, presentation, and delivery. SSK must not call an LLM or infer
+organizational intent.
 
 ## Current Gaps
 
@@ -31,9 +31,9 @@ Baseline inspected on 29 October 2026, before the phase 1 implementation:
   even when the consumer only needs Jira activity.
 - The Jira HTTP client has no explicit timeout or bounded rate-limit retry.
 
-The newsletter runner currently works around these limitations with repeated
-exclusion queries, Markdown parsing, external concurrency and condensation, and
-a JQL test that confirms a status changed without exposing its transition.
+These limitations force consumers to compensate with repeated exclusion queries,
+Markdown parsing, and external orchestration. A JQL test can confirm that a status
+changed without exposing the dated transition itself.
 
 ## Delivery Order
 
@@ -238,7 +238,7 @@ removed comments, or every historical organizational event.
 Include separate summaries for current status counts and dated activity:
 created issues, issues with status changes, transition-event counts, new comments,
 and edited comments. Label units explicitly and deduplicate by source identity.
-Expose native status categories and resolution values; newsletter-specific
+Expose native status categories and resolution values; consumer-specific
 “review” and “cancelled” groupings remain caller policy, not guessed name mappings.
 
 ## Acceptance Criteria
