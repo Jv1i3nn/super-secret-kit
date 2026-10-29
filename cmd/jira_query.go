@@ -47,7 +47,7 @@ func runJiraQuery(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("jql cannot be empty")
 	}
 
-	jiraClient, cleanup, err := initJiraClient(verboseEnabled)
+	jiraClient, cleanup, err := initJiraClient(cmd, verboseEnabled)
 	if err != nil {
 		return err
 	}
@@ -58,12 +58,15 @@ func runJiraQuery(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if contextErr := jiraClient.Context().Err(); contextErr != nil {
+		return contextErr
+	}
 	if format == "json" {
 		result, exportErr := services.BuildJiraExport("jira.query", effectiveJiraWorkspace(), jiraClient.BaseURL(), &jql, started, tickets)
 		if exportErr != nil {
 			return exportErr
 		}
-		return writeJiraJSON(cmd.OutOrStdout(), result)
+		return writeJiraJSON(jiraClient.Context(), cmd.OutOrStdout(), result)
 	}
 	_, err = fmt.Fprint(cmd.OutOrStdout(), formatQueryResults(tickets))
 	return err

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -63,7 +62,7 @@ func runJiraInspect(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--max-related cannot be negative")
 	}
 
-	jiraClient, cleanup, err := initJiraClient(verboseEnabled)
+	jiraClient, cleanup, err := initJiraClient(cmd, verboseEnabled)
 	if err != nil {
 		return err
 	}
@@ -72,17 +71,14 @@ func runJiraInspect(cmd *cobra.Command, args []string) error {
 	briefingService := services.NewBriefingService(jiraClient)
 	briefingService.SetVerbose(verboseEnabled, os.Stderr)
 
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := jiraClient.Context()
 
 	if format == "json" {
 		result, exportErr := briefingService.GenerateTicketInspectionExport(ctx, effectiveJiraWorkspace(), jiraClient.BaseURL(), ticketKey, opts, jiraInspectDownloadDir, started)
 		if exportErr != nil {
 			return exportErr
 		}
-		return writeJiraJSON(cmd.OutOrStdout(), result)
+		return writeJiraJSON(jiraClient.Context(), cmd.OutOrStdout(), result)
 	}
 	var context string
 	if jiraInspectDownloadDir != "" {
@@ -94,6 +90,9 @@ func runJiraInspect(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if contextErr := ctx.Err(); contextErr != nil {
+		return contextErr
+	}
 	_, err = fmt.Fprint(cmd.OutOrStdout(), context)
 	return err
 }

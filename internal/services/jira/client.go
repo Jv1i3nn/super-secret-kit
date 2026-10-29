@@ -1,9 +1,7 @@
 package jira
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,74 +18,86 @@ type Client struct {
 	httpClient  *http.Client
 	baseURL     string
 	credentials *models.Credentials
+	ctx         context.Context
 }
 
 // DownloadAttachment downloads a Jira-hosted attachment without exposing credentials.
 func (c *Client) DownloadAttachment(sourceURL, destination string) error {
 	parsedSource, err := url.Parse(sourceURL)
 	if err != nil {
-		return fmt.Errorf("invalid attachment URL: %w", err)
+		return fmt.Errorf("invalid attachment URL")
 	}
 	parsedBase, err := url.Parse(c.baseURL)
 	if err != nil {
-		return fmt.Errorf("invalid Jira base URL: %w", err)
+		return fmt.Errorf("invalid Jira base URL")
 	}
 	if parsedSource.User != nil || parsedSource.Scheme != parsedBase.Scheme || parsedSource.Host != parsedBase.Host {
 		return fmt.Errorf("attachment URL is outside the configured Jira site")
 	}
 
-	resp, err := c.makeDownloadRequest(sourceURL)
-	if err != nil {
-		return fmt.Errorf("download failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
 	file, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		return fmt.Errorf("create local file: %w", err)
 	}
-	success := false
+	success, closed := false, false
 	defer func() {
+		if !closed {
+			_ = file.Close()
+		}
 		if !success {
 			_ = os.Remove(destination)
 		}
 	}()
-	_, copyErr := io.Copy(file, resp.Body)
-	closeErr := file.Close()
-	if copyErr != nil {
-		return fmt.Errorf("write local file: %w", copyErr)
+	for attempt := 0; attempt < maxReadAttempts; attempt++ {
+		if contextErr := c.Context().Err(); contextErr != nil {
+			return contextErr
+		}
+		if attempt > 0 {
+			if truncateErr := file.Truncate(0); truncateErr != nil {
+				return fmt.Errorf("reset local file: %w", truncateErr)
+			}
+			if _, seekErr := file.Seek(0, io.SeekStart); seekErr != nil {
+				return fmt.Errorf("reset local file: %w", seekErr)
+			}
+		}
+		response, readErr := c.makeDownloadRequest(sourceURL)
+		if readErr == nil {
+			_, readErr = io.Copy(file, response.Body)
+			_ = response.Body.Close()
+		}
+		if contextErr := c.Context().Err(); contextErr != nil {
+			return contextErr
+		}
+		if readErr == nil {
+			closeErr := file.Close()
+			closed = true
+			if closeErr != nil {
+				return fmt.Errorf("close local file: %w", closeErr)
+			}
+			success = true
+			return nil
+		}
+		header, retryable := retryableFailure(readErr)
+		// Body errors can include transport URLs; expose only sanitized diagnostics.
+		var failure error = &requestFailure{cause: readErr}
+		if !retryable || attempt+1 == maxReadAttempts {
+			return fmt.Errorf("download failed: %w", failure)
+		}
+		if waitErr := waitReadRetry(c.Context(), failure, header, attempt); waitErr != nil {
+			return waitErr
+		}
 	}
-	if closeErr != nil {
-		return fmt.Errorf("close local file: %w", closeErr)
-	}
-	success = true
-	return nil
+	return fmt.Errorf("attachment read retries exhausted")
 }
 
 func (c *Client) makeDownloadRequest(sourceURL string) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodGet, sourceURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	auth := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", c.credentials.Username, c.credentials.Password)))
-	req.Header.Set("Authorization", fmt.Sprintf("Basic %s", auth))
-	req.Header.Set("Accept", "*/*")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed")
-	}
-	if resp.StatusCode != http.StatusOK {
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
-	}
-	return resp, nil
+	return c.request(c.Context(), http.MethodGet, sourceURL, nil, "*/*", false)
 }
 
 // NewClient creates a new Jira client
 func NewClient(baseURL string, credentials *models.Credentials) *Client {
 	return &Client{
-		httpClient:  &http.Client{},
+		httpClient:  &http.Client{Timeout: requestTimeout},
 		baseURL:     baseURL,
 		credentials: credentials,
 	}
@@ -203,6 +213,11 @@ func (c *Client) GetTicketByKey(issueKey string, fields []string) (*Ticket, erro
 
 // GetBriefingTicketByKey retrieves a ticket with the fields needed for briefing generation.
 func (c *Client) GetBriefingTicketByKey(issueKey string) (*Ticket, error) {
+	return c.GetInspectionTicketByKey(issueKey, true)
+}
+
+// GetInspectionTicketByKey can skip the development panel entirely.
+func (c *Client) GetInspectionTicketByKey(issueKey string, includeDevelopment bool) (*Ticket, error) {
 	fields := []string{
 		"id",
 		"key",
@@ -233,7 +248,13 @@ func (c *Client) GetBriefingTicketByKey(issueKey string) (*Ticket, error) {
 		return nil, err
 	}
 
+	if !includeDevelopment {
+		return ticket, nil
+	}
 	developmentInfo := c.GetDevelopmentInfo(ticket.ID)
+	if contextErr := c.Context().Err(); contextErr != nil {
+		return nil, contextErr
+	}
 	if len(developmentInfo) > 0 {
 		if ticket.Fields == nil {
 			ticket.Fields = map[string]interface{}{}
@@ -304,6 +325,9 @@ func (c *Client) GetDevelopmentInfo(issueID string) []interface{} {
 
 	for _, dataType := range dataTypes {
 		for _, applicationType := range applicationTypes {
+			if c.Context().Err() != nil {
+				return nil
+			}
 			params := url.Values{}
 			params.Set("issueId", issueID)
 			params.Set("applicationType", applicationType)
@@ -362,43 +386,11 @@ func (c *Client) makeRequest(url string) (*http.Response, error) {
 }
 
 func (c *Client) makeRequestWithBody(method, url string, body []byte) (*http.Response, error) {
-	return c.makeRequestWithBodyContext(context.Background(), method, url, body)
+	return c.makeRequestWithBodyContext(c.Context(), method, url, body)
 }
 
 func (c *Client) makeRequestWithBodyContext(ctx context.Context, method, url string, body []byte) (*http.Response, error) {
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Basic authentication: base64(username:password)
-	auth := base64.StdEncoding.EncodeToString([]byte(
-		fmt.Sprintf("%s:%s", c.credentials.Username, c.credentials.Password),
-	))
-
-	req.Header.Set("Authorization", fmt.Sprintf("Basic %s", auth))
-	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		_ = resp.Body.Close()
-		// Upstream error bodies can contain private issue content or authentication data.
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
-	}
-
-	return resp, nil
+	return c.request(ctx, method, url, body, "application/json", true)
 }
 
 // joinStrings joins a slice of strings with a delimiter

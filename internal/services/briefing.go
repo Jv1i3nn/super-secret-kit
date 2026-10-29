@@ -21,11 +21,14 @@ const (
 )
 
 type TicketInspectionOptions struct {
-	Depth          int
-	MaxRelated     int
-	ChangesPeriod  *JiraPeriod
-	CommentsPeriod *JiraPeriod
-	CommentsLimit  *int
+	Depth              int
+	MaxRelated         int
+	ChangesPeriod      *JiraPeriod
+	CommentsPeriod     *JiraPeriod
+	CommentsLimit      *int
+	DescriptionLines   int
+	CommentChars       int
+	IncludeDevelopment *bool
 }
 
 type BriefingJiraClient interface {
@@ -61,7 +64,10 @@ func (s *BriefingService) SetVerbose(verbose bool, debugOut io.Writer) {
 }
 
 func (s *BriefingService) GenerateBriefing(ctx context.Context) (string, error) {
-	_ = ctx
+	s = s.withJiraContext(ctx)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", contextErr
+	}
 
 	s.debug("fetching Jira briefing candidates")
 	candidates, err := s.jiraClient.GetBriefingCandidateTickets()
@@ -85,7 +91,10 @@ func (s *BriefingService) GenerateBriefing(ctx context.Context) (string, error) 
 
 	tickets := make([]jira.Ticket, 0, len(candidates))
 	for _, candidate := range candidates {
-		s.debug("fetching full Jira context for %s: %s", candidate.Key, candidate.Summary())
+		s.debug("fetching full Jira context for %s", candidate.Key)
+		if contextErr := ctx.Err(); contextErr != nil {
+			return "", contextErr
+		}
 		ticket, ticketErr := s.jiraClient.GetBriefingTicketByKey(candidate.Key)
 		if ticketErr != nil {
 			return "", fmt.Errorf("failed to get Jira ticket %s: %w", candidate.Key, ticketErr)
@@ -93,12 +102,18 @@ func (s *BriefingService) GenerateBriefing(ctx context.Context) (string, error) 
 		tickets = append(tickets, *ticket)
 	}
 
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", contextErr
+	}
 	context, err := BuildBriefingContext(tickets)
 	if err != nil {
 		return "", fmt.Errorf("failed to build briefing context: %w", err)
 	}
 	s.debug("built briefing context (%d characters)", len(context))
 
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", contextErr
+	}
 	return context, nil
 }
 
@@ -110,6 +125,7 @@ func (s *BriefingService) GenerateTicketInspection(ctx context.Context, issueKey
 }
 
 func (s *BriefingService) GenerateTicketInspectionWithOptions(ctx context.Context, issueKey string, opts TicketInspectionOptions) (string, error) {
+	s = s.withJiraContext(ctx)
 	rootKey, tickets, err := s.inspectionTickets(ctx, issueKey, opts)
 	if err != nil {
 		return "", err
@@ -119,18 +135,22 @@ func (s *BriefingService) GenerateTicketInspectionWithOptions(ctx context.Contex
 	if err != nil {
 		return "", err
 	}
-	context, err := renderInspectionHistory(rootKey, tickets, nil, histories)
+	context, err := renderInspectionHistory(rootKey, tickets, nil, histories, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to build Jira inspection context: %w", err)
 	}
 	s.debug("built Jira inspection context (%d characters)", len(context))
 
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", contextErr
+	}
 	return context, nil
 }
 
 // GenerateTicketInspectionWithDownloads adds local attachment paths to the inspection output.
 // Individual download failures are reported in the Markdown and do not fail inspection.
 func (s *BriefingService) GenerateTicketInspectionWithDownloads(ctx context.Context, issueKey string, opts TicketInspectionOptions, directory string) (string, error) {
+	s = s.withJiraContext(ctx)
 	directory = strings.TrimSpace(directory)
 	if directory == "" {
 		return "", errors.New("attachment download directory cannot be empty")
@@ -148,16 +168,24 @@ func (s *BriefingService) GenerateTicketInspectionWithDownloads(ctx context.Cont
 		return "", err
 	}
 	attachments := downloadJiraAttachments(ctx, tickets, directory, downloader)
-	context, err := renderInspectionHistory(rootKey, tickets, attachments, histories)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", contextErr
+	}
+	context, err := renderInspectionHistory(rootKey, tickets, attachments, histories, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to build Jira inspection context: %w", err)
 	}
 	s.debug("built Jira inspection context with attachments (%d characters)", len(context))
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", contextErr
+	}
 	return context, nil
 }
 
 func (s *BriefingService) inspectionTickets(ctx context.Context, issueKey string, opts TicketInspectionOptions) (string, []jira.Ticket, error) {
-	_ = ctx
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", nil, contextErr
+	}
 	if err := opts.validateHistory(); err != nil {
 		return "", nil, err
 	}
@@ -173,12 +201,12 @@ func (s *BriefingService) inspectionTickets(ctx context.Context, issueKey string
 	}
 
 	s.debug("fetching full Jira context for root ticket %s", issueKey)
-	rootTicket, err := s.jiraClient.GetBriefingTicketByKey(issueKey)
+	rootTicket, err := s.inspectionTicket(ctx, issueKey, opts)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to get Jira ticket %s: %w", issueKey, err)
 	}
 
-	tickets, err := s.fetchInspectionTickets(*rootTicket, opts)
+	tickets, err := s.fetchInspectionTickets(ctx, *rootTicket, opts)
 	if err != nil {
 		return "", nil, err
 	}
@@ -190,7 +218,7 @@ type inspectionQueueItem struct {
 	depth int
 }
 
-func (s *BriefingService) fetchInspectionTickets(rootTicket jira.Ticket, opts TicketInspectionOptions) ([]jira.Ticket, error) {
+func (s *BriefingService) fetchInspectionTickets(ctx context.Context, rootTicket jira.Ticket, opts TicketInspectionOptions) ([]jira.Ticket, error) {
 	tickets := []jira.Ticket{rootTicket}
 	seen := map[string]struct{}{rootTicket.Key: {}}
 	queue := make([]inspectionQueueItem, 0, opts.MaxRelated)
@@ -223,7 +251,7 @@ func (s *BriefingService) fetchInspectionTickets(rootTicket jira.Ticket, opts Ti
 		queue = queue[1:]
 
 		s.debug("fetching full Jira context for related ticket %s at depth %d", item.key, item.depth)
-		ticket, err := s.jiraClient.GetBriefingTicketByKey(item.key)
+		ticket, err := s.inspectionTicket(ctx, item.key, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get related Jira ticket %s: %w", item.key, err)
 		}
@@ -501,17 +529,18 @@ func appendTicketContext(b *strings.Builder, ticket jira.Ticket, index int, atta
 }
 
 func truncateString(value string, maxChars int) string {
-	if maxChars <= 0 || len(value) <= maxChars {
+	runes := []rune(value)
+	if maxChars <= 0 || len(runes) <= maxChars {
 		return value
 	}
 
-	notice := fmt.Sprintf("\n[truncated %d characters]\n", len(value)-maxChars)
+	notice := fmt.Sprintf("\n[truncated %d characters]\n", len(runes)-maxChars)
 	limit := maxChars - len(notice)
 	if limit <= 0 {
-		return value[:maxChars]
+		return string(runes[:maxChars])
 	}
 
-	return value[:limit] + notice
+	return string(runes[:limit]) + notice
 }
 
 func appendStringField(b *strings.Builder, fields map[string]interface{}, key, label string) {
