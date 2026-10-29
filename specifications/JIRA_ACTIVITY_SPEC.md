@@ -52,10 +52,9 @@ Markdown/text output unless a documented correctness fix requires otherwise.
   All search entry points share the pagination helper. Inspection JSON preserves
   bounded traversal and optional attachment-download results. Embedded comments
   are explicitly incomplete; JSON excludes development-panel data.
-- Validation: Linux race-enabled tests, pinned-version lint, vet, module verification, and
-  build pass.
-  `go mod tidy -diff` cannot finish offline because two upstream test dependencies
-  are not cached. macOS and live Jira validation have not been performed.
+- Validation: dependencies downloaded; `go mod tidy -diff`, module verification,
+  pinned-version lint, vet, Linux race-enabled tests, and build pass. Linux/macOS
+  CI passed for the code changes at `d1c8727`. No live Jira account was used.
 - Phases 2–4: pending; no changelog/comment-period flags, compact controls,
   cancellation/retry policy, or `jira activity` command are implemented yet.
 
