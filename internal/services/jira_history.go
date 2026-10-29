@@ -227,13 +227,18 @@ func normalizeComments(comments []jira.Comment, period *JiraPeriod, limit *int) 
 	})
 	matching := len(result.Items)
 	result.MatchingCount = &matching
-	if limit != nil && *limit > 0 && len(result.Items) > *limit {
-		result.Items = result.Items[:*limit]
-		result.OutputTruncated = true
-		result.SelectionTruncated = true
-	}
-	result.ReturnedCount = len(result.Items)
+	limitExportComments(result, limit)
 	return result, nil
+}
+
+func limitExportComments(comments *JiraExportComments, limit *int) {
+	comments.Limit = limit
+	if limit != nil && *limit > 0 && len(comments.Items) > *limit {
+		comments.Items = comments.Items[:*limit]
+		comments.OutputTruncated = true
+		comments.SelectionTruncated = true
+	}
+	comments.ReturnedCount = len(comments.Items)
 }
 
 func normalizeHistoryUser(user *jira.User) *JiraExportUser {

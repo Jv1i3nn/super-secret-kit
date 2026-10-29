@@ -1,7 +1,7 @@
 # Jira Activity Export Specification
 
-Status: phases 1–3 implemented on separate branches. Phase 3 is on
-`feat/jira-compact-retrieval`, based on `feat/jira-history`. Phase 4 remains proposed. The JSON contract is documented in `README.rst`.
+Status: all four phases are implemented on separate branches. Phase 4 is on
+`feat/jira-activity`, based on `feat/jira-compact-retrieval`. The JSON contract is documented in `README.rst`.
 The new repository uses `default` as the default workspace; named workspaces in
 examples must be configured explicitly.
 
@@ -74,7 +74,15 @@ Markdown/text output unless a documented correctness fix requires otherwise.
   canceled streams remove their partial files. Local Linux validation covers
   race-enabled tests, pinned-version lint, module verification, tidy, vet and build.
   Phase 3 macOS CI is pending; no live Jira account was used.
-- Phase 4: `jira activity` remains pending.
+- Phase 4: `jira activity` selects complete lower-bound updated candidates, fetches
+  current context and period changes/comments with 1–32 workers (default 6), and
+  cancels outstanding requests on failure. Results and timelines are deterministic.
+  Counts use full matching sources before excerpts; current states and dated events
+  have separate summaries with explicit units. Unknown creation dates and candidate
+  issues without dated evidence are identified. Optional development links are
+  normalized and sanitized, with completeness explicitly unknown. Local Linux
+  race tests, pinned-version lint, dependency checks, vet and build pass. Phase 4
+  macOS CI is pending; no live Jira account was used.
 
 ## Search Pagination
 
@@ -214,7 +222,7 @@ they must not contain credentials or raw descriptions/comment bodies.
 
 ## Activity Command
 
-After the primitives are available, add:
+Implemented command:
 
 ```bash
 ssk jira activity \
@@ -241,8 +249,11 @@ workspace initially; callers can aggregate multiple explicitly selected spaces.
 - A candidate search must not exclude an issue merely because its latest update
   occurred after `until`: it may also contain events inside the requested period.
   Prefer a broad candidate selection followed by exact client-side event filtering.
-- Document Jira's JQL timezone/precision semantics and translate bounds correctly;
-  do not relabel timezone-less JQL timestamps as UTC without conversion.
+- Candidate dates use unquoted epoch-millisecond literals, supported by JQL date
+  fields, rather than timezone-less textual dates. Floor the lower bound to a
+  millisecond, keep no upper update bound, and filter source timestamps exactly.
+  This avoids configured-timezone and daylight-saving ambiguity. Expose the
+  encoding, effective JQL and rounded bound in the contract.
 - An updated candidate without an identifiable event may remain in the export,
   explicitly marked as having no detailed activity evidence available.
 - Successful zero-result exports are valid. Required source failures fail the
@@ -290,6 +301,7 @@ Use HTTP fixtures and CLI tests; no live Jira account is required for CI.
 ## References
 
 - Current [Jira command documentation](../README.rst).
+- [Atlassian JQL date fields and epoch-millisecond literals](https://support.atlassian.com/jira-software-cloud/docs/jql-fields/).
 - [Atlassian comment link convention](https://support.atlassian.com/jira/kb/a-customer-notification-was-sent-from-an-internal-comment-added-to-a-jsm-ticket/).
 - [Atlassian enhanced JQL search and pagination](https://confluence.atlassian.com/jirakb/how-to-return-issues-from-a-jql-query-using-rest-api-1289424308.html).
 - [Jira issue changelog API, including bulk retrieval](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/).
