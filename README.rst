@@ -439,16 +439,48 @@ La commande récupère le ticket demandé, puis les tickets liés par parent, so
    # Exporter un ticket en JSON sans parcourir ses relations
    ssk jira inspect PROJ-123 --depth 0 --max-related 0 --format json
 
+   # Exporter les changements et commentaires d'une période
+   ssk jira inspect PROJ-123 --depth 0 --max-related 0 --format json \
+     --changes-since 2026-10-21T10:00:00Z --changes-until 2026-10-28T11:00:00Z \
+     --comments-since 2026-10-21T10:00:00Z --comments-until 2026-10-28T11:00:00Z \
+     --comments-limit 5
+
    # Télécharger les pièces jointes et médias intégrés
    ssk jira inspect PROJ-123 --download-attachments ./jira-artifacts/PROJ-123
 
 **Options disponibles :**
 
 - ``--format markdown|json`` - Format de sortie (par défaut : ``markdown``)
+- ``--changes-since <date>`` / ``--changes-until <date>`` - Changements dans la période
+- ``--comments-since <date>`` / ``--comments-until <date>`` - Commentaires créés ou modifiés dans la période
+- ``--comments-limit <n>`` - Récupère tous les commentaires visibles et conserve les n plus récents après filtrage (0 : sans limite)
 - ``--depth <n>`` - Profondeur de parcours des relations Jira (par défaut : 2)
 - ``--max-related <n>`` - Nombre maximum de tickets liés à récupérer, hors ticket racine (par défaut : 10)
 - ``--download-attachments <répertoire>`` - Télécharge les pièces jointes Jira et indique les chemins locaux dans la sortie
 - ``--workspace <nom>`` - Espace de travail Jira à cibler (par défaut : ``default``)
+
+Les bornes sont des dates RFC 3339 avec fuseau explicite : ``since`` est inclus et
+``until`` exclu. Une borne haute exige la borne basse correspondante ; si elle est
+omise, elle est fixée une seule fois au début de la commande. Les options sont
+validées avant l'accès aux services. Les limites négatives sont refusées.
+
+Sans ces options, l'inspection conserve son comportement habituel. Une période de
+changements active la pagination de l'historique. Une période de commentaires ou
+un ``--comments-limit`` explicite (même 0) active leur récupération complète via
+l'API dédiée. Ces options s'appliquent à tous les tickets sélectionnés par le
+parcours. Chaque source est limitée à 100 pages de 100 éléments demandés par
+ticket ; une pagination incohérente, une limite atteinte avec des pages restantes,
+un accès refusé ou une date indispensable invalide font échouer la commande sans
+sortie partielle. La complétude concerne uniquement les données visibles du compte.
+
+Les commentaires sont filtrés sur leur création ou leur dernière modification,
+puis triés par activité dans la période, de la plus récente à la plus ancienne,
+avec l'ID comme départage. Une création dans la période reste retenue même si la
+dernière modification est postérieure à ``until``. Les corps restent leurs versions
+courantes ; les modifications intermédiaires non exposées par Jira ne sont pas
+reconstituées. Le Markdown remplace le sous-ensemble intégré par les commentaires
+récupérés et ajoute une section d'activité datée. Sa limite de sécurité de 30 000
+caractères pour les commentaires est signalée séparément de la limite de sélection.
 
 Contrat JSON Jira (version 1)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -469,15 +501,28 @@ Une valeur indisponible vaut ``null`` ; une collection connue vide vaut ``[]``.
 profondeur/nombre demandées pour l'inspection. ``inspection.related_omitted`` et
 ``warnings`` signalent les relations non parcourues. Les métadonnées de relation
 restent présentes même avec ``--depth 0``. ``output_truncated`` distingue une coupe
-de sortie d'une limite de sélection ; le JSON actuel ne coupe pas les champs.
+de sortie d'une limite de sélection ; le JSON ne coupe pas les corps, mais signale
+la sélection des commentaires limitée par ``--comments-limit``.
 Les dates invalides des tickets deviennent ``null`` avec un avertissement.
 
 Les commentaires intégrés, lorsqu'ils sont disponibles, portent
 ``comments.source: embedded`` et ``comments.retrieval_complete: false`` : ils ne
-prouvent pas l'exhaustivité de la discussion. L'historique daté et la pagination
-explicite des commentaires restent à implémenter. Le JSON n'exporte pas les données
-du panneau de développement. Avec ``--download-attachments``, il inclut les chemins
-locaux et les éventuelles erreurs par pièce jointe ; ces erreurs ne font pas échouer
+prouvent pas l'exhaustivité de la discussion. Avec une récupération explicite, la
+source devient ``issue_comments`` et ``retrieval_complete`` vaut ``true``. Les
+métadonnées indiquent la période effective, les nombres récupéré, correspondant et
+retourné, la limite et ``output_truncated``. Chaque commentaire expose son URL,
+``activity_at``, ``created_in_period`` et ``edited_in_period`` (les deux derniers
+valent ``null`` sans période). Une création et une modification dans la période
+peuvent toutes deux être signalées.
+
+``changes`` vaut ``null`` sans demande d'historique. Sinon, il contient la période,
+le nombre de changelogs récupérés, les nombres de changements de champ
+correspondants/retournés et les événements triés chronologiquement. Chaque événement
+conserve ``changelog_id`` et ``item_index`` comme identité source, la date UTC,
+l'auteur et les valeurs avant/après du champ. Plusieurs transitions d'un même
+ticket restent distinctes. Les champs courants restent séparés de ces événements.
+Le JSON n'exporte pas les données du panneau de développement. Avec
+``--download-attachments``, il inclut les chemins locaux et les éventuelles erreurs par pièce jointe ; ces erreurs ne font pas échouer
 l'inspection, comme en Markdown. Les champs courants reflètent la collecte, pas un
 état historique ou un instantané transactionnel de Jira.
 

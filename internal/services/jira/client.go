@@ -2,6 +2,7 @@ package jira
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -361,12 +362,16 @@ func (c *Client) makeRequest(url string) (*http.Response, error) {
 }
 
 func (c *Client) makeRequestWithBody(method, url string, body []byte) (*http.Response, error) {
+	return c.makeRequestWithBodyContext(context.Background(), method, url, body)
+}
+
+func (c *Client) makeRequestWithBodyContext(ctx context.Context, method, url string, body []byte) (*http.Response, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequest(method, url, reader)
+	req, err := http.NewRequestWithContext(ctx, method, url, reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
