@@ -90,6 +90,9 @@ type jiraHistoryClient interface {
 }
 
 func (o TicketInspectionOptions) validateHistory() error {
+	if o.DescriptionLines < 0 || o.CommentChars < 0 {
+		return fmt.Errorf("description lines and comment characters cannot be negative")
+	}
 	if err := o.ChangesPeriod.validate(); err != nil {
 		return fmt.Errorf("changes period: %w", err)
 	}
@@ -103,7 +106,7 @@ func (o TicketInspectionOptions) validateHistory() error {
 }
 
 func (s *BriefingService) inspectionHistory(ctx context.Context, tickets []jira.Ticket, opts TicketInspectionOptions) (map[string]jiraIssueHistory, error) {
-	if opts.ChangesPeriod == nil && opts.CommentsPeriod == nil && opts.CommentsLimit == nil {
+	if opts.ChangesPeriod == nil && opts.CommentsPeriod == nil && opts.CommentsLimit == nil && opts.CommentChars <= 0 {
 		return nil, nil
 	}
 	client, ok := s.jiraClient.(jiraHistoryClient)
@@ -112,6 +115,9 @@ func (s *BriefingService) inspectionHistory(ctx context.Context, tickets []jira.
 	}
 	result := make(map[string]jiraIssueHistory, len(tickets))
 	for _, ticket := range tickets {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return nil, contextErr
+		}
 		var history jiraIssueHistory
 		if opts.ChangesPeriod != nil {
 			s.debug("fetching changelogs for %s", ticket.Key)
@@ -124,7 +130,7 @@ func (s *BriefingService) inspectionHistory(ctx context.Context, tickets []jira.
 				return nil, fmt.Errorf("changelogs for %s: %w", ticket.Key, err)
 			}
 		}
-		if opts.CommentsPeriod != nil || opts.CommentsLimit != nil {
+		if opts.CommentsPeriod != nil || opts.CommentsLimit != nil || opts.CommentChars > 0 {
 			s.debug("fetching comments for %s", ticket.Key)
 			comments, err := client.GetComments(ctx, ticket.Key)
 			if err != nil {
@@ -136,6 +142,7 @@ func (s *BriefingService) inspectionHistory(ctx context.Context, tickets []jira.
 			}
 		}
 		if history.Comments != nil {
+			compactComments(history.Comments, opts.CommentChars)
 			for index := range history.Comments.Items {
 				comment := &history.Comments.Items[index]
 				link := issueBrowserURL(strings.TrimRight(client.BaseURL(), "/"), ticket.Key) + "?focusedCommentId=" + url.QueryEscape(*comment.ID) + "#comment-" + url.PathEscape(*comment.ID)
@@ -223,6 +230,7 @@ func normalizeComments(comments []jira.Comment, period *JiraPeriod, limit *int) 
 	if limit != nil && *limit > 0 && len(result.Items) > *limit {
 		result.Items = result.Items[:*limit]
 		result.OutputTruncated = true
+		result.SelectionTruncated = true
 	}
 	result.ReturnedCount = len(result.Items)
 	return result, nil
@@ -259,9 +267,11 @@ func applyInspectionHistory(result *JiraExport, histories map[string]jiraIssueHi
 }
 
 // renderInspectionHistory preserves legacy rendering when history options are absent.
-func renderInspectionHistory(rootKey string, tickets []jira.Ticket, attachments map[string][]jiraAttachment, histories map[string]jiraIssueHistory) (string, error) {
+func renderInspectionHistory(rootKey string, tickets []jira.Ticket, attachments map[string][]jiraAttachment, histories map[string]jiraIssueHistory, opts TicketInspectionOptions) (string, error) {
+	tickets, notices := compactMarkdownTickets(tickets, opts)
 	if histories == nil {
-		return buildInspectionContext(rootKey, tickets, attachments)
+		text, err := buildInspectionContext(rootKey, tickets, attachments)
+		return text + notices, err
 	}
 	rendered := make([]jira.Ticket, len(tickets))
 	copy(rendered, tickets)
@@ -283,6 +293,7 @@ func renderInspectionHistory(rootKey string, tickets []jira.Ticket, attachments 
 	}
 	var output strings.Builder
 	output.WriteString(text)
+	output.WriteString(notices)
 	output.WriteString("\n# Dated Jira Activity\n\nCurrent fields above reflect collection time. Comment bodies are their current versions.\n")
 	for _, ticket := range tickets {
 		history := histories[ticket.Key]
@@ -332,6 +343,9 @@ func appendHistoryComments(output *strings.Builder, comments *JiraExportComments
 		if comment.Author != nil {
 			fmt.Fprintf(&body, "  Author: %s\n", historyText(comment.Author.DisplayName))
 		}
+		if comment.BodyTruncated {
+			body.WriteString("  Body truncated: true\n")
+		}
 		if comment.Body == nil {
 			body.WriteString("  Body: unavailable\n")
 		} else {
@@ -341,7 +355,7 @@ func appendHistoryComments(output *strings.Builder, comments *JiraExportComments
 	// Retain the existing Markdown comment safety budget and disclose it separately.
 	chars := []rune(body.String())
 	bodyTruncated := len(chars) > maxBriefingCommentsChars
-	fmt.Fprintf(output, "Retrieval complete: true; matching comments: %d; selected comments: %d; selection truncated: %t; body output truncated: %t\n", *comments.MatchingCount, comments.ReturnedCount, comments.OutputTruncated, bodyTruncated)
+	fmt.Fprintf(output, "Retrieval complete: true; matching comments: %d; selected comments: %d; selection truncated: %t; body output truncated: %t\n", *comments.MatchingCount, comments.ReturnedCount, comments.SelectionTruncated, bodyTruncated || comments.BodyOutputTruncated)
 	if bodyTruncated {
 		output.WriteString(string(chars[:maxBriefingCommentsChars]))
 		output.WriteString("\n[comment output truncated]\n")

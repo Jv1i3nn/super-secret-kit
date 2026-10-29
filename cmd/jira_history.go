@@ -11,6 +11,9 @@ import (
 )
 
 func addJiraHistoryFlags(cmd *cobra.Command) {
+	cmd.Flags().Int("description-lines", 0, "retain the first n normalized description lines (0: unlimited)")
+	cmd.Flags().Int("comment-chars", 0, "retrieve comments and cap each retained body by Unicode characters (0: unlimited)")
+	cmd.Flags().Bool("include-development", true, "fetch development-panel data")
 	cmd.Flags().String("changes-since", "", "include changes since this RFC 3339 timestamp (inclusive)")
 	cmd.Flags().String("changes-until", "", "include changes before this RFC 3339 timestamp (exclusive; default: command start)")
 	cmd.Flags().String("comments-since", "", "include comments created or last edited since this RFC 3339 timestamp (inclusive)")
@@ -57,6 +60,34 @@ func jiraHistoryOptions(cmd *cobra.Command, started time.Time) (services.TicketI
 			return opts, fmt.Errorf("--comments-limit cannot be negative")
 		}
 		opts.CommentsLimit = &limit
+	}
+	for _, name := range []string{"description-lines", "comment-chars"} {
+		if cmd.Flags().Lookup(name) == nil {
+			continue
+		}
+		value, err := cmd.Flags().GetInt(name)
+		if err != nil {
+			return opts, err
+		}
+		if value < 0 {
+			return opts, fmt.Errorf("--%s cannot be negative", name)
+		}
+		if name == "description-lines" {
+			opts.DescriptionLines = value
+		} else {
+			opts.CommentChars = value
+			if cmd.Flags().Changed(name) && opts.CommentsLimit == nil {
+				unlimited := 0
+				opts.CommentsLimit = &unlimited
+			}
+		}
+	}
+	if cmd.Flags().Changed("include-development") {
+		include, err := cmd.Flags().GetBool("include-development")
+		if err != nil {
+			return opts, err
+		}
+		opts.IncludeDevelopment = &include
 	}
 	return opts, nil
 }
