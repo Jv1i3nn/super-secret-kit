@@ -129,7 +129,7 @@ func (c *Client) searchTickets(jql, fields string) ([]Ticket, error) {
 	seenIDs := make(map[string]bool)
 	seenTokens := make(map[string]bool)
 	// Bound pathological responses without ever claiming a truncated success.
-	const maxSearchPages = 10000
+	const maxSearchPages = 100
 	for page := 1; page <= maxSearchPages; page++ {
 		reqURL := fmt.Sprintf("%s/rest/api/3/search/jql?%s", c.BaseURL(), params.Encode())
 		resp, err := c.makeRequest(reqURL)
@@ -171,7 +171,7 @@ func (c *Client) searchTickets(jql, fields string) ([]Ticket, error) {
 		seenTokens[token] = true
 		params.Set("nextPageToken", token)
 	}
-	return nil, fmt.Errorf("search exceeded the %d page limit", maxSearchPages)
+	return nil, fmt.Errorf("search exceeded the %d page limit; narrow the JQL query", maxSearchPages)
 }
 
 // GetTicketByKey retrieves a ticket by its key

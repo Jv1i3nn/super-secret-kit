@@ -105,3 +105,36 @@ func TestSearchErrorDoesNotExposeResponseBody(t *testing.T) {
 		t.Fatalf("unsafe diagnostic: %v", err)
 	}
 }
+
+func TestSearchTicketsPageLimit(t *testing.T) {
+	for _, completeAtLimit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("complete_at_limit=%t", completeAtLimit), func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls++
+				if calls > 100 {
+					t.Error("search exceeded 100 requests")
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				if completeAtLimit && calls == 100 {
+					fmt.Fprintf(w, `{"issues":[{"id":"%d","key":"EX-%d"}],"isLast":true}`, calls, calls)
+				} else {
+					fmt.Fprintf(w, `{"issues":[{"id":"%d","key":"EX-%d"}],"isLast":false,"nextPageToken":"page-%d"}`, calls, calls, calls+1)
+				}
+			}))
+			defer server.Close()
+			tickets, err := NewClient(server.URL, &models.Credentials{}).SearchTickets("project = EX")
+			if calls != 100 {
+				t.Fatalf("requests = %d, want 100", calls)
+			}
+			if completeAtLimit {
+				if err != nil || len(tickets) != 100 {
+					t.Fatalf("complete result: count = %d, error = %v", len(tickets), err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), "100 page limit") || tickets != nil {
+				t.Fatalf("want explicit limit failure without partial results; count = %d, error = %v", len(tickets), err)
+			}
+		})
+	}
+}

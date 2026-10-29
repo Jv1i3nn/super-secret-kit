@@ -69,8 +69,9 @@ Do not use an approximate count as the number of retrieved issues.
 - Extend the response model to represent pagination explicitly.
 - Deduplicate by Jira issue ID within a workspace. Preserve deterministic order.
 - Detect repeated tokens, non-progressing pages, and inconsistent termination.
-- An operational page cap, if needed, must cause an explicit failure on reaching
-  it; it must never silently truncate the result.
+- The operational cap is 100 pages, requesting up to 100 issues per page. If
+  more pages remain at the cap, fail explicitly and advise narrowing the JQL;
+  never silently truncate the result. A completed 100th page succeeds.
 - A failure on a later page fails the command. Do not print an apparently
   successful partial JSON document or text listing.
 - A successful empty search returns an empty collection and count zero.
