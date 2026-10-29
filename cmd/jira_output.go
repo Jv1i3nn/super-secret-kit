@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,10 +30,13 @@ func effectiveJiraWorkspace() string {
 }
 
 // Marshal before writing so normalization/encoding errors cannot emit partial JSON.
-func writeJiraJSON(output io.Writer, result interface{}) error {
+func writeJiraJSON(ctx context.Context, output io.Writer, result interface{}) error {
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode Jira JSON: %w", err)
+	}
+	if contextErr := ctx.Err(); contextErr != nil {
+		return contextErr
 	}
 	data = append(data, '\n')
 	_, err = output.Write(data)

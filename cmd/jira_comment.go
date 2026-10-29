@@ -34,7 +34,7 @@ func runJiraComment(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("comment cannot be empty")
 	}
 
-	jiraClient, cleanup, err := initJiraClient(verboseEnabled)
+	jiraClient, cleanup, err := initJiraClient(cmd, verboseEnabled)
 	if err != nil {
 		return err
 	}

@@ -29,7 +29,6 @@ type jiraAttachment struct {
 }
 
 func downloadJiraAttachments(ctx context.Context, tickets []jira.Ticket, directory string, downloader AttachmentDownloader) map[string][]jiraAttachment {
-	_ = ctx
 	artifacts := collectJiraAttachments(tickets)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		for key, attachments := range artifacts {
@@ -44,6 +43,9 @@ func downloadJiraAttachments(ctx context.Context, tickets []jira.Ticket, directo
 	for _, ticket := range tickets {
 		attachments := artifacts[ticket.Key]
 		for index := range attachments {
+			if ctx.Err() != nil {
+				return artifacts
+			}
 			attachment := &attachments[index]
 			if attachment.SourceURL == "" {
 				attachment.DownloadErr = "no downloadable Jira URL"

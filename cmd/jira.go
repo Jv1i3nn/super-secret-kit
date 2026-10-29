@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -25,12 +27,35 @@ intended to be consumed by code agents.`,
 
 func init() {
 	rootCmd.AddCommand(jiraCmd)
+	jiraCmd.PersistentFlags().Duration("timeout", 2*time.Minute, "overall Jira command deadline (must be positive)")
 	jiraCmd.PersistentFlags().StringVar(&jiraWorkspace, "workspace", config.DefaultJiraWorkspace,
 		"Jira workspace to target (configured under jira_workspaces)")
 }
 
-func initJiraClient(verboseEnabled bool) (*jira.Client, func(), error) {
-	return initJiraClientForWorkspace(verboseEnabled, jiraWorkspace)
+func initJiraClient(cmd *cobra.Command, verboseEnabled bool) (*jira.Client, func(), error) {
+	timeout := 2 * time.Minute
+	if flag := cmd.Flag("timeout"); flag != nil {
+		parsed, err := time.ParseDuration(flag.Value.String())
+		if err != nil || parsed <= 0 {
+			return nil, nil, fmt.Errorf("--timeout must be a positive duration")
+		}
+		timeout = parsed
+	}
+	parent := cmd.Context()
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
+	if contextErr := ctx.Err(); contextErr != nil {
+		cancel()
+		return nil, nil, contextErr
+	}
+	client, cleanup, err := initJiraClientForWorkspace(verboseEnabled, jiraWorkspace)
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	return client.WithContext(ctx), func() { cancel(); cleanup() }, nil
 }
 
 func initJiraClientForWorkspace(verboseEnabled bool, workspace string) (*jira.Client, func(), error) {

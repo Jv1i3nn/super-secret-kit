@@ -31,10 +31,13 @@ type JiraExport struct {
 }
 
 type JiraExportInspection struct {
-	RootKey        string `json:"root_key"`
-	Depth          int    `json:"depth"`
-	MaxRelated     int    `json:"max_related"`
-	RelatedOmitted bool   `json:"related_omitted"`
+	RootKey            string `json:"root_key"`
+	Depth              int    `json:"depth"`
+	MaxRelated         int    `json:"max_related"`
+	RelatedOmitted     bool   `json:"related_omitted"`
+	IncludeDevelopment bool   `json:"include_development"`
+	DescriptionLines   int    `json:"description_lines"`
+	CommentChars       int    `json:"comment_chars"`
 }
 
 type JiraExportWarning struct {
@@ -84,22 +87,25 @@ type JiraExportComment struct {
 	CreatedAt       *time.Time      `json:"created_at"`
 	UpdatedAt       *time.Time      `json:"updated_at"`
 	Body            *string         `json:"body"`
+	BodyTruncated   bool            `json:"body_truncated"`
 	ActivityAt      *time.Time      `json:"activity_at"`
 	CreatedInPeriod *bool           `json:"created_in_period"`
 	EditedInPeriod  *bool           `json:"edited_in_period"`
 }
 
 type JiraExportComments struct {
-	Source            string              `json:"source"`
-	Period            *JiraPeriod         `json:"period"`
-	RetrievedCount    *int                `json:"retrieved_count"`
-	MatchingCount     *int                `json:"matching_count"`
-	Limit             *int                `json:"limit"`
-	Ordering          *string             `json:"ordering"`
-	RetrievalComplete bool                `json:"retrieval_complete"`
-	OutputTruncated   bool                `json:"output_truncated"`
-	ReturnedCount     int                 `json:"returned_count"`
-	Items             []JiraExportComment `json:"items"`
+	Source              string              `json:"source"`
+	Period              *JiraPeriod         `json:"period"`
+	RetrievedCount      *int                `json:"retrieved_count"`
+	MatchingCount       *int                `json:"matching_count"`
+	Limit               *int                `json:"limit"`
+	Ordering            *string             `json:"ordering"`
+	RetrievalComplete   bool                `json:"retrieval_complete"`
+	OutputTruncated     bool                `json:"output_truncated"`
+	SelectionTruncated  bool                `json:"selection_truncated"`
+	BodyOutputTruncated bool                `json:"body_output_truncated"`
+	ReturnedCount       int                 `json:"returned_count"`
+	Items               []JiraExportComment `json:"items"`
 }
 
 type JiraExportAttachment struct {
@@ -110,28 +116,29 @@ type JiraExportAttachment struct {
 }
 
 type JiraExportIssue struct {
-	Workspace   string                 `json:"workspace"`
-	ID          string                 `json:"id"`
-	Key         string                 `json:"key"`
-	URL         string                 `json:"url"`
-	Summary     *string                `json:"summary"`
-	Description *string                `json:"description"`
-	Project     *JiraExportNamedValue  `json:"project"`
-	Status      *JiraExportStatus      `json:"status"`
-	Resolution  *JiraExportNamedValue  `json:"resolution"`
-	CreatedAt   *time.Time             `json:"created_at"`
-	UpdatedAt   *time.Time             `json:"updated_at"`
-	ResolvedAt  *time.Time             `json:"resolved_at"`
-	Assignee    *JiraExportUser        `json:"assignee"`
-	Parent      *JiraExportReference   `json:"parent"`
-	Subtasks    []JiraExportReference  `json:"subtasks"`
-	IssueLinks  []JiraExportLink       `json:"issue_links"`
-	Components  []JiraExportNamedValue `json:"components"`
-	Labels      []string               `json:"labels"`
-	FixVersions []JiraExportNamedValue `json:"fix_versions"`
-	Comments    *JiraExportComments    `json:"comments"`
-	Changes     *JiraExportChanges     `json:"changes"`
-	Attachments []JiraExportAttachment `json:"attachments"`
+	Workspace            string                 `json:"workspace"`
+	ID                   string                 `json:"id"`
+	Key                  string                 `json:"key"`
+	URL                  string                 `json:"url"`
+	Summary              *string                `json:"summary"`
+	Description          *string                `json:"description"`
+	DescriptionTruncated bool                   `json:"description_truncated"`
+	Project              *JiraExportNamedValue  `json:"project"`
+	Status               *JiraExportStatus      `json:"status"`
+	Resolution           *JiraExportNamedValue  `json:"resolution"`
+	CreatedAt            *time.Time             `json:"created_at"`
+	UpdatedAt            *time.Time             `json:"updated_at"`
+	ResolvedAt           *time.Time             `json:"resolved_at"`
+	Assignee             *JiraExportUser        `json:"assignee"`
+	Parent               *JiraExportReference   `json:"parent"`
+	Subtasks             []JiraExportReference  `json:"subtasks"`
+	IssueLinks           []JiraExportLink       `json:"issue_links"`
+	Components           []JiraExportNamedValue `json:"components"`
+	Labels               []string               `json:"labels"`
+	FixVersions          []JiraExportNamedValue `json:"fix_versions"`
+	Comments             *JiraExportComments    `json:"comments"`
+	Changes              *JiraExportChanges     `json:"changes"`
+	Attachments          []JiraExportAttachment `json:"attachments"`
 }
 
 // BuildJiraExport normalizes current issue fields without copying arbitrary API data.
@@ -239,6 +246,7 @@ func normalizeJiraIssue(workspace, siteURL string, ticket jira.Ticket) JiraExpor
 
 // GenerateTicketInspectionExport shares traversal and attachment behavior with Markdown inspection.
 func (s *BriefingService) GenerateTicketInspectionExport(ctx context.Context, workspace, siteURL, issueKey string, opts TicketInspectionOptions, directory string, started time.Time) (*JiraExport, error) {
+	s = s.withJiraContext(ctx)
 	rootKey, tickets, err := s.inspectionTickets(ctx, issueKey, opts)
 	if err != nil {
 		return nil, err
@@ -252,8 +260,9 @@ func (s *BriefingService) GenerateTicketInspectionExport(ctx context.Context, wo
 		return nil, err
 	}
 	applyInspectionHistory(result, histories)
+	applyInspectionCompact(result, opts)
 	result.Ordering = "root first, then breadth-first related issues"
-	result.Inspection = &JiraExportInspection{RootKey: rootKey, Depth: opts.Depth, MaxRelated: opts.MaxRelated}
+	result.Inspection = &JiraExportInspection{RootKey: rootKey, Depth: opts.Depth, MaxRelated: opts.MaxRelated, IncludeDevelopment: opts.IncludeDevelopment == nil || *opts.IncludeDevelopment, DescriptionLines: opts.DescriptionLines, CommentChars: opts.CommentChars}
 	included := make(map[string]bool, len(tickets))
 	for _, ticket := range tickets {
 		included[ticket.Key] = true
@@ -284,6 +293,9 @@ func (s *BriefingService) GenerateTicketInspectionExport(ctx context.Context, wo
 				}
 			}
 		}
+	}
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, contextErr
 	}
 	result.CollectionEndedAt = time.Now().UTC()
 	return result, nil
