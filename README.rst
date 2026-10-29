@@ -377,24 +377,14 @@ Rechercher des tickets avec une requête JQL. Les résultats sont regroupés par
    ssk jira query 'project = PROJ ORDER BY updated DESC' --workspace autre-espace
    ssk jira query 'project = PROJ ORDER BY updated DESC' --format json
 
-``--workspace <nom>`` sélectionne un espace configuré dans ``jira_workspaces`` (par défaut : ``default``).
+``--format json`` conserve l'ordre de recherche ; la sortie texte reste regroupée
+par statut. Les résultats sont paginés et dédupliqués. Une erreur ou un dépassement
+de 100 pages fait échouer la commande sans résultats partiels.
 
-Les commandes ``jira`` acceptent ``--timeout <durée>`` (par défaut : ``2m``) pour
-borner l'ensemble des requêtes et attentes. Chaque requête HTTP est limitée à
-30 secondes. Les lectures retentent au maximum trois fois au total sur erreur
-réseau transitoire, HTTP 408/429/500/502/503/504, avec une attente de 200 puis
-400 ms sans indication serveur. ``Retry-After`` (secondes ou date HTTP) est
-respecté si l'attente tient dans le budget restant et ne dépasse pas 30 secondes ;
-sinon la commande échoue. Les erreurs d'authentification, d'accès et de requête
-invalide ne sont pas retentées. La création de commentaires n'est jamais retentée.
-Une interruption annule les lectures, les attentes et les téléchargements en cours.
-
-La recherche parcourt toutes les pages de l'API Jira et déduplique les tickets par ID.
-Une erreur sur une page fait échouer la commande sans imprimer de résultats partiels.
-La recherche est limitée à 100 pages (100 tickets demandés par page). Si des pages
-restent à récupérer à cette limite, précisez la JQL pour réduire la sélection.
-``--format text`` conserve la sortie habituelle ; ``--format json`` conserve l'ordre
-de recherche plutôt que le regroupement par statut.
+Les commandes ``jira`` partagent ``--workspace <nom>`` (par défaut : ``default``)
+et ``--timeout <durée>`` (par défaut : ``2m``). Chaque requête HTTP est limitée à
+30 secondes ; les lectures ont au maximum trois tentatives. La création de
+commentaires n'est jamais retentée. Une interruption annule les appels en cours.
 
 ``jira briefing``
 ~~~~~~~~~~~~~~~~~
@@ -446,18 +436,12 @@ La commande récupère le ticket demandé, puis les tickets liés par parent, so
    # Cibler un autre espace de travail Jira
    ssk jira inspect PROJ-123 --workspace autre-espace
 
-   # Exporter un ticket en JSON sans parcourir ses relations
-   ssk jira inspect PROJ-123 --depth 0 --max-related 0 --format json
+   # Exporter uniquement le ticket demandé en JSON
+   ssk jira inspect PROJ-123 --depth 0 --format json
 
-   # Exporter les changements et commentaires d'une période
-   ssk jira inspect PROJ-123 --depth 0 --max-related 0 --format json \
-     --changes-since 2026-10-21T10:00:00Z --changes-until 2026-10-28T11:00:00Z \
-     --comments-since 2026-10-21T10:00:00Z --comments-until 2026-10-28T11:00:00Z \
-     --comments-limit 5
-
-   # Réduire le contexte et éviter les appels au panneau de développement
+   # Réduire le contexte et désactiver le panneau de développement
    ssk jira inspect PROJ-123 --description-lines 10 --comments-limit 5 \
-     --comment-chars 2000 --include-development=false --timeout 1m
+     --comment-chars 2000 --include-development=false
 
    # Télécharger les pièces jointes et médias intégrés
    ssk jira inspect PROJ-123 --download-attachments ./jira-artifacts/PROJ-123
@@ -468,88 +452,37 @@ La commande récupère le ticket demandé, puis les tickets liés par parent, so
 - ``--description-lines <n>`` - Premières lignes du texte normalisé de la description (0 : sans limite explicite)
 - ``--comment-chars <n>`` - Maximum de caractères Unicode par commentaire retenu (0 : sans limite explicite)
 - ``--include-development=false`` - Désactive tous les appels au panneau de développement (activés par défaut)
-- ``--timeout <durée>`` - Budget total de la commande, par exemple ``1m`` (par défaut : ``2m``)
 - ``--changes-since <date>`` / ``--changes-until <date>`` - Changements dans la période
 - ``--comments-since <date>`` / ``--comments-until <date>`` - Commentaires créés ou modifiés dans la période
-- ``--comments-limit <n>`` - Récupère tous les commentaires visibles et conserve les n plus récents après filtrage (0 : sans limite)
+- ``--comments-limit <n>`` - Nombre de commentaires les plus récents après filtrage (0 : sans limite explicite)
 - ``--depth <n>`` - Profondeur de parcours des relations Jira (par défaut : 2)
 - ``--max-related <n>`` - Nombre maximum de tickets liés à récupérer, hors ticket racine (par défaut : 10)
 - ``--download-attachments <répertoire>`` - Télécharge les pièces jointes Jira et indique les chemins locaux dans la sortie
 - ``--workspace <nom>`` - Espace de travail Jira à cibler (par défaut : ``default``)
 
-Les bornes sont des dates RFC 3339 avec fuseau explicite : ``since`` est inclus et
-``until`` exclu. Une borne haute exige la borne basse correspondante ; si elle est
-omise, elle est fixée une seule fois au début de la commande. Les options sont
-validées avant l'accès aux services. Les limites négatives sont refusées.
+Les bornes sont des dates RFC 3339 avec fuseau explicite : ``since`` est inclus,
+``until`` exclu. Une borne haute exige la borne basse correspondante ; omise, elle
+vaut le début de la commande. Les options s'appliquent à tous les tickets parcourus.
 
-Sans options de sélection ou de volume, l'inspection conserve son contenu habituel.
-Une période de changements active la pagination de l'historique. Une période de
-commentaires, un ``--comments-limit`` ou un ``--comment-chars`` explicite (même 0)
-active leur récupération complète via l'API dédiée. La limite de corps s'applique
-après le filtrage et la sélection, sans couper un caractère UTF-8. Les limites de
-volume négatives sont refusées. Les relations restent présentes même en contexte
-compact et avec ``--depth 0``. Ces options s'appliquent à tous les tickets sélectionnés par le
-parcours. Chaque source est limitée à 100 pages de 100 éléments demandés par
-ticket ; une pagination incohérente, une limite atteinte avec des pages restantes,
-un accès refusé ou une date indispensable invalide font échouer la commande sans
-sortie partielle. La complétude concerne uniquement les données visibles du compte.
+Une période de commentaires ou un ``--comments-limit``/``--comment-chars`` explicite
+(même 0) active leur récupération complète avant filtrage et limites. Sans ces
+options, les commentaires intégrés peuvent être incomplets. Les limites de volume
+négatives sont refusées ; zéro conserve les budgets de sécurité du Markdown.
 
-Les commentaires sont filtrés sur leur création ou leur dernière modification,
-puis triés par activité dans la période, de la plus récente à la plus ancienne,
-avec l'ID comme départage. Une création dans la période reste retenue même si la
-dernière modification est postérieure à ``until``. Les corps restent leurs versions
-courantes ; les modifications intermédiaires non exposées par Jira ne sont pas
-reconstituées. Le Markdown remplace le sous-ensemble intégré par les commentaires
-récupérés et ajoute une section d'activité datée. Sa limite de sécurité de 30 000
-caractères pour les commentaires est signalée séparément de la limite de sélection.
+Sortie JSON Jira
+~~~~~~~~~~~~~~~~
 
-Contrat JSON Jira (version 1)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``query``, ``inspect`` et ``activity`` acceptent ``--format json`` : un seul document
+sur ``stdout``, avec les diagnostics sur ``stderr``. La sortie est versionnée
+(``schema_version: 1``) et contient les champs normalisés et l'identité des tickets
+par espace/site et ID Jira. Une valeur indisponible vaut ``null`` ; une collection
+connue vide vaut ``[]``.
 
-Les sorties JSON de ``query``, ``inspect`` et ``activity`` contiennent un seul document UTF-8 sur
-``stdout`` ; les diagnostics restent sur ``stderr``, y compris en mode verbose.
-Le document indique ``schema_version: 1``, ``kind`` (``jira.query`` ou
-``jira.inspect`` ou ``jira.activity``), l'espace et l'URL du site, les dates UTC de collecte, la JQL
-(``null`` pour l'inspection), le nombre réel de tickets distincts et l'ordre de sortie.
-Les champs des tickets sont normalisés : identifiants, URL, résumé, description,
-projet, statut et catégorie native, résolution, dates, assignation et relations.
-Les identifiants utilisateur et noms d'affichage sont conservés, sans leurs adresses
-email. Les descriptions et commentaires ADF utilisent la conversion textuelle
-existante. Aucun champ personnalisé ni réponse API brute n'est recopié.
-
-Une valeur indisponible vaut ``null`` ; une collection connue vide vaut ``[]``.
-``retrieval_complete`` décrit la sélection des tickets, dans les limites de
-profondeur/nombre demandées pour l'inspection. ``inspection.related_omitted`` et
-``warnings`` signalent les relations non parcourues. Les métadonnées de relation
-restent présentes même avec ``--depth 0``. ``output_truncated`` distingue une coupe
-de sortie d'une limite de sélection. ``description_truncated`` indique une coupe de
-la description. ``comments.selection_truncated`` et ``comments.body_output_truncated``
-distinguent la limite de nombre et la limite de corps ; chaque commentaire porte
-``body_truncated``. Les limites n'altèrent pas les nombres de données récupérées
-et de résultats correspondants. Le Markdown conserve ses budgets de sécurité et
-signale les coupes supplémentaires ; les limites à zéro ne les désactivent pas.
-Les dates invalides des tickets deviennent ``null`` avec un avertissement.
-
-Les commentaires intégrés, lorsqu'ils sont disponibles, portent
-``comments.source: embedded`` et ``comments.retrieval_complete: false`` : ils ne
-prouvent pas l'exhaustivité de la discussion. Avec une récupération explicite, la
-source devient ``issue_comments`` et ``retrieval_complete`` vaut ``true``. Les
-métadonnées indiquent la période effective, les nombres récupéré, correspondant et
-retourné, la limite et ``output_truncated``. Chaque commentaire expose son URL,
-``activity_at``, ``created_in_period`` et ``edited_in_period`` (les deux derniers
-valent ``null`` sans période). Une création et une modification dans la période
-peuvent toutes deux être signalées.
-
-``changes`` vaut ``null`` sans demande d'historique. Sinon, il contient la période,
-le nombre de changelogs récupérés, les nombres de changements de champ
-correspondants/retournés et les événements triés chronologiquement. Chaque événement
-conserve ``changelog_id`` et ``item_index`` comme identité source, la date UTC,
-l'auteur et les valeurs avant/après du champ. Plusieurs transitions d'un même
-ticket restent distinctes. Les champs courants restent séparés de ces événements.
-Le JSON de ``query`` et ``inspect`` n'exporte pas les données du panneau de développement. Avec
-``--download-attachments``, il inclut les chemins locaux et les éventuelles erreurs par pièce jointe ; ces erreurs ne font pas échouer
-l'inspection, comme en Markdown. Les champs courants reflètent la collecte, pas un
-état historique ou un instantané transactionnel de Jira.
+``retrieval_complete`` décrit la sélection visible récupérée. ``output_truncated``
+et ``warnings`` signalent les extraits et limites ; les coupes de descriptions,
+de nombre de commentaires et de corps sont indiquées séparément. Les champs et
+corps de commentaires restent leurs versions courantes, distinctes des événements
+datés : l'export ne reconstitue pas un instantané historique.
 
 ``jira activity``
 ~~~~~~~~~~~~~~~~~
@@ -563,44 +496,24 @@ courants, changements et commentaires datés. La sortie par défaut est en Markd
      --format json --workers 6 --description-lines 10 --comments-limit 5 \
      --comment-chars 2000 --include-development=false
 
-``--since`` est obligatoire ; ``--until`` est exclu et vaut le début de la commande
-s'il est omis. Les dates exigent un fuseau RFC 3339. ``--workers`` accepte 1 à 32
-récupérations simultanées (6 par défaut). Les contrôles de volume d'``inspect``,
-``--workspace`` et ``--timeout`` s'appliquent aussi. Les périodes indépendantes
-``--changes-*`` et ``--comments-since/until`` ne sont pas acceptées : toutes les
-sources utilisent la même période.
+``--since`` est obligatoire, en RFC 3339 avec fuseau. ``--until`` est exclu et vaut
+le début de la commande s'il est omis. ``--workers`` accepte 1 à 32 récupérations
+simultanées (6 par défaut). Les contrôles de volume d'``inspect``, ``--workspace``
+et ``--timeout`` sont aussi disponibles. Toutes les sources utilisent cette même
+période ; les bornes indépendantes ``--changes-*``/``--comments-since/until`` ne
+sont pas acceptées.
 
-La sélection utilise ``updated >= <millisecondes Unix>`` sans guillemets, avec la
-borne basse arrondie vers le bas à la milliseconde. Ce format absolu évite les
-ambiguïtés de fuseau et de changement d'heure des dates JQL textuelles. Il n'y a
-pas de borne haute sur ``updated`` : un ticket modifié après ``until`` peut porter
-des événements de la période. Tous les candidats visibles de cette sélection
-restent dans l'export ; ceux sans événement daté visible sont signalés par
-``has_detailed_evidence: false``. Les limites de pages et d'accès restent celles
-des commandes précédentes. Une erreur requise annule les autres récupérations et
-la commande échoue sans document partiel.
+La recherche conserve les candidats mis à jour depuis la borne basse, y compris
+après ``until``, puis filtre leurs événements sur la période. Les candidats sans
+preuve datée sont signalés. Les changements et commentaires sont récupérés sur
+toutes leurs pages, dans la limite de 100 pages par source et par ticket ; une
+erreur requise annule les autres récupérations et échoue sans document partiel.
 
-Le JSON porte ``kind: jira.activity`` et conserve le contrat version 1. Les tickets
-sont triés par mise à jour courante décroissante (date inconnue en dernier), puis
-clé et ID croissants. Chaque ``activity.events`` est une chronologie par date et
-identité source, distincte des champs courants. Les commentaires détaillés restent
-sélectionnés du plus récent au plus ancien ; leur limite ne retire pas les IDs et
-dates de la chronologie. Les compteurs utilisent toutes les données correspondantes
-avant les limites de corps ou de nombre.
-
-``activity.summary`` sépare les statuts courants des créations, tickets avec
-changements de statut, événements de transition, commentaires nouveaux et édités.
-Chaque compteur indique son unité. Un commentaire créé puis édité dans la période
-peut contribuer aux deux compteurs. Les dates de création indisponibles et les
-tickets sans preuve datée ont leurs propres compteurs. Les catégories natives et
-résolutions restent celles de Jira, sans regroupement métier déduit des noms.
-
-L'export décrit les sources visibles sélectionnées, pas un état historique ou un
-instantané transactionnel. Les suppressions, restrictions et éditions intermédiaires
-de commentaires ne sont pas reconstituées. Avec le panneau de développement activé
-(par défaut), ``activity`` peut aussi fournir des liens normalisés dans
-``development`` ; cet enrichissement est optionnel et sa complétude reste inconnue.
-Les paramètres et identifiants d'authentification des URL ne sont pas exportés.
+La sortie est déterministe. Les statuts courants sont comptés séparément des
+créations, transitions et commentaires nouveaux/édités, avec des unités explicites.
+Les compteurs et la chronologie utilisent les données correspondantes avant les
+limites d'extraits ; les corps restent leurs versions courantes. La complétude
+concerne les sources visibles, sans reconstituer les données supprimées ou masquées.
 
 ``jira comment``
 ~~~~~~~~~~~~~~~~
