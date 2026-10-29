@@ -18,9 +18,11 @@ const (
 
 // TicketSearchResponse represents the response from Jira search API
 type TicketSearchResponse struct {
-	Issues     []Ticket `json:"issues"`
-	Total      int      `json:"total"`
-	MaxResults int      `json:"maxResults"`
+	Issues        []Ticket `json:"issues"`
+	NextPageToken string   `json:"nextPageToken"`
+	IsLast        *bool    `json:"isLast"`
+	Total         int      `json:"total"`
+	MaxResults    int      `json:"maxResults"`
 }
 
 // User represents a Jira user

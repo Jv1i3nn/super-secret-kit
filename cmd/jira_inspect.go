@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -32,12 +33,18 @@ code agent, not a polished user-facing briefing.`,
 
 func init() {
 	jiraCmd.AddCommand(jiraInspectCmd)
+	jiraInspectCmd.Flags().String("format", "markdown", "output format (markdown, json)")
 	jiraInspectCmd.Flags().IntVar(&jiraInspectDepth, "depth", 2, "relationship traversal depth")
 	jiraInspectCmd.Flags().IntVar(&jiraInspectMaxRelated, "max-related", 10, "maximum number of related Jira tickets to fetch")
 	jiraInspectCmd.Flags().StringVar(&jiraInspectDownloadDir, "download-attachments", "", "download Jira attachments and embedded media to this directory")
 }
 
 func runJiraInspect(cmd *cobra.Command, args []string) error {
+	started := time.Now()
+	format, err := jiraOutputFormat(cmd, "markdown")
+	if err != nil {
+		return err
+	}
 	verboseEnabled := verbose || viper.GetBool("verbose")
 	ticketKey := strings.TrimSpace(args[0])
 	if ticketKey == "" {
@@ -67,6 +74,13 @@ func runJiraInspect(cmd *cobra.Command, args []string) error {
 	opts := services.TicketInspectionOptions{
 		Depth:      jiraInspectDepth,
 		MaxRelated: jiraInspectMaxRelated,
+	}
+	if format == "json" {
+		result, exportErr := briefingService.GenerateTicketInspectionExport(ctx, effectiveJiraWorkspace(), jiraClient.BaseURL(), ticketKey, opts, jiraInspectDownloadDir, started)
+		if exportErr != nil {
+			return exportErr
+		}
+		return writeJiraJSON(cmd.OutOrStdout(), result)
 	}
 	var context string
 	if jiraInspectDownloadDir != "" {

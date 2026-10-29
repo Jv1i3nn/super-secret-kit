@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"ssk/internal/models"
 )
@@ -95,94 +96,82 @@ func NewClient(baseURL string, credentials *models.Credentials) *Client {
 func (c *Client) GetAssignedTickets() ([]Ticket, error) {
 	jql := "assignee = currentUser() AND resolution = Unresolved ORDER BY updatedDate DESC"
 
-	params := url.Values{}
-	params.Set("jql", jql)
-	params.Set("fields", "id,key,summary,status,project")
-
-	reqURL := fmt.Sprintf("%s/rest/api/3/search/jql?%s", c.baseURL, params.Encode())
-
-	resp, err := c.makeRequest(reqURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get assigned tickets: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var searchResp TicketSearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return searchResp.Issues, nil
+	return c.searchTickets(jql, "id,key,summary,status,project")
 }
 
 // GetAutofillCandidateTickets retrieves recently updated tickets assigned to the current user.
 func (c *Client) GetAutofillCandidateTickets() ([]Ticket, error) {
 	jql := "assignee = currentUser() AND updated >= -14d ORDER BY updated DESC"
 
-	params := url.Values{}
-	params.Set("jql", jql)
-	params.Set("fields", "id,key,summary,status,created,updated,resolutiondate,assignee")
-
-	reqURL := fmt.Sprintf("%s/rest/api/3/search/jql?%s", c.baseURL, params.Encode())
-
-	resp, err := c.makeRequest(reqURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get autofill candidate tickets: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var searchResp TicketSearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return searchResp.Issues, nil
+	return c.searchTickets(jql, "id,key,summary,status,created,updated,resolutiondate,assignee")
 }
 
 // GetBriefingCandidateTickets retrieves recently updated tickets assigned to the current user.
 func (c *Client) GetBriefingCandidateTickets() ([]Ticket, error) {
 	jql := "assignee = currentUser() AND updated >= -30d AND statusCategory != Done ORDER BY updated DESC"
 
-	params := url.Values{}
-	params.Set("jql", jql)
-	params.Set("fields", "id,key,summary,status,project,created,updated,resolutiondate,assignee,reporter,priority,labels,components,fixVersions,parent,subtasks,issuelinks")
-
-	reqURL := fmt.Sprintf("%s/rest/api/3/search/jql?%s", c.baseURL, params.Encode())
-
-	resp, err := c.makeRequest(reqURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get briefing candidate tickets: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var searchResp TicketSearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return searchResp.Issues, nil
+	return c.searchTickets(jql, "id,key,summary,status,project,created,updated,resolutiondate,assignee,reporter,priority,labels,components,fixVersions,parent,subtasks,issuelinks")
 }
 
 // SearchTickets runs an arbitrary JQL query and returns matching tickets.
 func (c *Client) SearchTickets(jql string) ([]Ticket, error) {
-	params := url.Values{}
-	params.Set("jql", jql)
-	params.Set("fields", "id,key,summary,status,project,updated,resolutiondate")
+	return c.searchTickets(jql, "id,key,summary,description,status,resolution,project,created,updated,resolutiondate,assignee,parent,subtasks,issuelinks,components,labels,fixVersions")
+}
 
-	reqURL := fmt.Sprintf("%s/rest/api/3/search/jql?%s", c.baseURL, params.Encode())
+// BaseURL is the configured Jira site used to identify exported issues.
+func (c *Client) BaseURL() string {
+	return strings.TrimRight(c.baseURL, "/")
+}
 
-	resp, err := c.makeRequest(reqURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search tickets: %w", err)
+func (c *Client) searchTickets(jql, fields string) ([]Ticket, error) {
+	params := url.Values{"jql": {jql}, "fields": {fields}, "maxResults": {"100"}}
+	tickets := make([]Ticket, 0)
+	seenIDs := make(map[string]bool)
+	seenTokens := make(map[string]bool)
+	// Bound pathological responses without ever claiming a truncated success.
+	const maxSearchPages = 10000
+	for page := 1; page <= maxSearchPages; page++ {
+		reqURL := fmt.Sprintf("%s/rest/api/3/search/jql?%s", c.BaseURL(), params.Encode())
+		resp, err := c.makeRequest(reqURL)
+		if err != nil {
+			return nil, fmt.Errorf("search page %d failed: %w", page, err)
+		}
+		var result TicketSearchResponse
+		decodeErr := json.NewDecoder(resp.Body).Decode(&result)
+		_ = resp.Body.Close()
+		if decodeErr != nil {
+			return nil, fmt.Errorf("decode search page %d: %w", page, decodeErr)
+		}
+		if result.Issues == nil || result.IsLast == nil {
+			return nil, fmt.Errorf("search page %d lacks issues or completion metadata", page)
+		}
+		if *result.IsLast && result.NextPageToken != "" {
+			return nil, fmt.Errorf("search page %d has inconsistent completion metadata", page)
+		}
+		before := len(tickets)
+		for _, ticket := range result.Issues {
+			if strings.TrimSpace(ticket.ID) == "" {
+				return nil, fmt.Errorf("search page %d contains an issue without an ID", page)
+			}
+			if !seenIDs[ticket.ID] {
+				seenIDs[ticket.ID] = true
+				tickets = append(tickets, ticket)
+			}
+		}
+		if *result.IsLast {
+			return tickets, nil
+		}
+		token := result.NextPageToken
+		if token == "" || seenTokens[token] {
+			return nil, fmt.Errorf("search page %d has a missing or repeated continuation token", page)
+		}
+		if len(tickets) == before {
+			return nil, fmt.Errorf("search page %d made no progress", page)
+		}
+		seenTokens[token] = true
+		params.Set("nextPageToken", token)
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	var searchResp TicketSearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return searchResp.Issues, nil
+	return nil, fmt.Errorf("search exceeded the %d page limit", maxSearchPages)
 }
 
 // GetTicketByKey retrieves a ticket by its key
@@ -223,6 +212,7 @@ func (c *Client) GetBriefingTicketByKey(issueKey string) (*Ticket, error) {
 		"created",
 		"updated",
 		"resolutiondate",
+		"resolution",
 		"assignee",
 		"reporter",
 		"creator",
@@ -398,12 +388,9 @@ func (c *Client) makeRequestWithBody(method, url string, body []byte) (*http.Res
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		body, errRead := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		if errRead != nil {
-			return nil, fmt.Errorf("API returned status %d (failed to read body: %w)", resp.StatusCode, errRead)
-		}
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+		// Upstream error bodies can contain private issue content or authentication data.
+		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
 	}
 
 	return resp, nil

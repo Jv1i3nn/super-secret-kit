@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"ssk/internal/services"
 	"ssk/internal/services/jira"
 )
 
@@ -29,9 +31,15 @@ Example:
 
 func init() {
 	jiraCmd.AddCommand(jiraQueryCmd)
+	jiraQueryCmd.Flags().String("format", "text", "output format (text, json)")
 }
 
 func runJiraQuery(cmd *cobra.Command, args []string) error {
+	started := time.Now()
+	format, err := jiraOutputFormat(cmd, "text")
+	if err != nil {
+		return err
+	}
 	verboseEnabled := verbose || viper.GetBool("verbose")
 
 	jql := strings.TrimSpace(args[0])
@@ -50,6 +58,13 @@ func runJiraQuery(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if format == "json" {
+		result, exportErr := services.BuildJiraExport("jira.query", effectiveJiraWorkspace(), jiraClient.BaseURL(), &jql, started, tickets)
+		if exportErr != nil {
+			return exportErr
+		}
+		return writeJiraJSON(cmd.OutOrStdout(), result)
+	}
 	_, err = fmt.Fprint(cmd.OutOrStdout(), formatQueryResults(tickets))
 	return err
 }

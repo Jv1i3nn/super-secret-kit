@@ -375,8 +375,14 @@ Rechercher des tickets avec une requête JQL. Les résultats sont regroupés par
 
    ssk jira query 'assignee = currentUser() AND resolution = Unresolved'
    ssk jira query 'project = PROJ ORDER BY updated DESC' --workspace autre-espace
+   ssk jira query 'project = PROJ ORDER BY updated DESC' --format json
 
 ``--workspace <nom>`` sélectionne un espace configuré dans ``jira_workspaces`` (par défaut : ``default``).
+
+La recherche parcourt toutes les pages de l'API Jira et déduplique les tickets par ID.
+Une erreur sur une page fait échouer la commande sans imprimer de résultats partiels.
+``--format text`` conserve la sortie habituelle ; ``--format json`` conserve l'ordre
+de recherche plutôt que le regroupement par statut.
 
 ``jira briefing``
 ~~~~~~~~~~~~~~~~~
@@ -428,15 +434,50 @@ La commande récupère le ticket demandé, puis les tickets liés par parent, so
    # Cibler un autre espace de travail Jira
    ssk jira inspect PROJ-123 --workspace autre-espace
 
+   # Exporter un ticket en JSON sans parcourir ses relations
+   ssk jira inspect PROJ-123 --depth 0 --max-related 0 --format json
+
    # Télécharger les pièces jointes et médias intégrés
    ssk jira inspect PROJ-123 --download-attachments ./jira-artifacts/PROJ-123
 
 **Options disponibles :**
 
+- ``--format markdown|json`` - Format de sortie (par défaut : ``markdown``)
 - ``--depth <n>`` - Profondeur de parcours des relations Jira (par défaut : 2)
 - ``--max-related <n>`` - Nombre maximum de tickets liés à récupérer, hors ticket racine (par défaut : 10)
 - ``--download-attachments <répertoire>`` - Télécharge les pièces jointes Jira et indique les chemins locaux dans la sortie
 - ``--workspace <nom>`` - Espace de travail Jira à cibler (par défaut : ``default``)
+
+Contrat JSON Jira (version 1)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Les sorties JSON de ``query`` et ``inspect`` contiennent un seul document UTF-8 sur
+``stdout`` ; les diagnostics restent sur ``stderr``, y compris en mode verbose.
+Le document indique ``schema_version: 1``, ``kind`` (``jira.query`` ou
+``jira.inspect``), l'espace et l'URL du site, les dates UTC de collecte, la JQL
+(``null`` pour l'inspection), le nombre réel de tickets distincts et l'ordre de sortie.
+Les champs des tickets sont normalisés : identifiants, URL, résumé, description,
+projet, statut et catégorie native, résolution, dates, assignation et relations.
+Les identifiants utilisateur et noms d'affichage sont conservés, sans leurs adresses
+email. Les descriptions et commentaires ADF utilisent la conversion textuelle
+existante. Aucun champ personnalisé ni réponse API brute n'est recopié.
+
+Une valeur indisponible vaut ``null`` ; une collection connue vide vaut ``[]``.
+``retrieval_complete`` décrit la sélection des tickets, dans les limites de
+profondeur/nombre demandées pour l'inspection. ``inspection.related_omitted`` et
+``warnings`` signalent les relations non parcourues. Les métadonnées de relation
+restent présentes même avec ``--depth 0``. ``output_truncated`` distingue une coupe
+de sortie d'une limite de sélection ; le JSON actuel ne coupe pas les champs.
+Les dates invalides des tickets deviennent ``null`` avec un avertissement.
+
+Les commentaires intégrés, lorsqu'ils sont disponibles, portent
+``comments.source: embedded`` et ``comments.retrieval_complete: false`` : ils ne
+prouvent pas l'exhaustivité de la discussion. L'historique daté et la pagination
+explicite des commentaires restent à implémenter. Le JSON n'exporte pas les données
+du panneau de développement. Avec ``--download-attachments``, il inclut les chemins
+locaux et les éventuelles erreurs par pièce jointe ; ces erreurs ne font pas échouer
+l'inspection, comme en Markdown. Les champs courants reflètent la collecte, pas un
+état historique ou un instantané transactionnel de Jira.
 
 ``jira comment``
 ~~~~~~~~~~~~~~~~
