@@ -129,6 +129,11 @@ func (c *Client) SearchTickets(jql string) ([]Ticket, error) {
 	return c.searchTickets(jql, "id,key,summary,description,status,resolution,project,created,updated,resolutiondate,assignee,parent,subtasks,issuelinks,components,labels,fixVersions")
 }
 
+// SearchActivityCandidates retrieves identities for complete activity selection.
+func (c *Client) SearchActivityCandidates(jql string) ([]Ticket, error) {
+	return c.searchTickets(jql, "id,key,updated")
+}
+
 // BaseURL is the configured Jira site used to identify exported issues.
 func (c *Client) BaseURL() string {
 	return strings.TrimRight(c.baseURL, "/")

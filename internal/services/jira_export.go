@@ -26,6 +26,7 @@ type JiraExport struct {
 	OutputTruncated     bool                  `json:"output_truncated"`
 	Ordering            string                `json:"ordering"`
 	Inspection          *JiraExportInspection `json:"inspection"`
+	Activity            *JiraExportActivity   `json:"activity"`
 	Warnings            []JiraExportWarning   `json:"warnings"`
 	Issues              []JiraExportIssue     `json:"issues"`
 }
@@ -139,6 +140,8 @@ type JiraExportIssue struct {
 	Comments             *JiraExportComments    `json:"comments"`
 	Changes              *JiraExportChanges     `json:"changes"`
 	Attachments          []JiraExportAttachment `json:"attachments"`
+	Activity             *JiraIssueActivity     `json:"activity"`
+	Development          *JiraExportDevelopment `json:"development"`
 }
 
 // BuildJiraExport normalizes current issue fields without copying arbitrary API data.

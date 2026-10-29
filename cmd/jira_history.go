@@ -10,15 +10,19 @@ import (
 	"ssk/internal/services"
 )
 
-func addJiraHistoryFlags(cmd *cobra.Command) {
+func addJiraCompactFlags(cmd *cobra.Command) {
 	cmd.Flags().Int("description-lines", 0, "retain the first n normalized description lines (0: unlimited)")
 	cmd.Flags().Int("comment-chars", 0, "retrieve comments and cap each retained body by Unicode characters (0: unlimited)")
 	cmd.Flags().Bool("include-development", true, "fetch development-panel data")
+	cmd.Flags().Int("comments-limit", 0, "retrieve all visible comments and retain the newest n qualifying comments (0: unlimited)")
+}
+
+func addJiraHistoryFlags(cmd *cobra.Command) {
+	addJiraCompactFlags(cmd)
 	cmd.Flags().String("changes-since", "", "include changes since this RFC 3339 timestamp (inclusive)")
 	cmd.Flags().String("changes-until", "", "include changes before this RFC 3339 timestamp (exclusive; default: command start)")
 	cmd.Flags().String("comments-since", "", "include comments created or last edited since this RFC 3339 timestamp (inclusive)")
 	cmd.Flags().String("comments-until", "", "include comments created or last edited before this RFC 3339 timestamp (exclusive; default: command start)")
-	cmd.Flags().Int("comments-limit", 0, "retrieve all visible comments and retain the newest n qualifying comments (0: unlimited)")
 }
 
 func jiraHistoryOptions(cmd *cobra.Command, started time.Time) (services.TicketInspectionOptions, error) {
