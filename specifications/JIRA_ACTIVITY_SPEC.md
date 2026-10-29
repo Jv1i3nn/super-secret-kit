@@ -1,8 +1,7 @@
 # Jira Activity Export Specification
 
-Status: phase 1 implemented on `feat/jira-structured-output`; phase 2 implemented
-separately on `feat/jira-history`. Phases 3–4 remain proposed. The JSON contract is
-documented in `README.rst`.
+Status: phases 1–3 implemented on separate branches. Phase 3 is on
+`feat/jira-compact-retrieval`, based on `feat/jira-history`. Phase 4 remains proposed. The JSON contract is documented in `README.rst`.
 The new repository uses `default` as the default workspace; named workspaces in
 examples must be configured explicitly.
 
@@ -64,8 +63,18 @@ Markdown/text output unless a documented correctness fix requires otherwise.
   Linux checks pass: race-enabled tests, pinned-version lint, module verification,
   `go mod tidy -diff`, vet, and build. Phase 2 macOS CI is pending; no live Jira
   account was used.
-- Phases 3–4: pending; compact description/body controls, end-to-end cancellation,
-  request timeout/retry policy, and `jira activity` are not implemented yet.
+- Phase 3: opt-in description lines, Unicode comment-body limits and development
+  enrichment control; command cancellation, HTTP timeouts, and bounded read
+  retries. JSON distinguishes selection/body truncation and retains relationships.
+  The default command budget is 2 minutes (`--timeout`); each HTTP attempt has a
+  30-second timeout. Reads have at most 3 attempts for transient network failures
+  and HTTP 408/429/500/502/503/504. Retry waits respect `Retry-After`, with a maximum
+  30-second wait and the remaining command deadline. Mutations are never retried.
+  Attachment header/body failures share the same three-attempt limit; failed or
+  canceled streams remove their partial files. Local Linux validation covers
+  race-enabled tests, pinned-version lint, module verification, tidy, vet and build.
+  Phase 3 macOS CI is pending; no live Jira account was used.
+- Phase 4: `jira activity` remains pending.
 
 ## Search Pagination
 
@@ -285,3 +294,4 @@ Use HTTP fixtures and CLI tests; no live Jira account is required for CI.
 - [Atlassian enhanced JQL search and pagination](https://confluence.atlassian.com/jirakb/how-to-return-issues-from-a-jql-query-using-rest-api-1289424308.html).
 - [Jira issue changelog API, including bulk retrieval](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/).
 - [Jira issue comments API](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-comments/).
+- [Atlassian rate limiting and Retry-After](https://developer.atlassian.com/cloud/jira/platform/rate-limiting/).

@@ -379,6 +379,16 @@ Rechercher des tickets avec une requête JQL. Les résultats sont regroupés par
 
 ``--workspace <nom>`` sélectionne un espace configuré dans ``jira_workspaces`` (par défaut : ``default``).
 
+Les commandes ``jira`` acceptent ``--timeout <durée>`` (par défaut : ``2m``) pour
+borner l'ensemble des requêtes et attentes. Chaque requête HTTP est limitée à
+30 secondes. Les lectures retentent au maximum trois fois au total sur erreur
+réseau transitoire, HTTP 408/429/500/502/503/504, avec une attente de 200 puis
+400 ms sans indication serveur. ``Retry-After`` (secondes ou date HTTP) est
+respecté si l'attente tient dans le budget restant et ne dépasse pas 30 secondes ;
+sinon la commande échoue. Les erreurs d'authentification, d'accès et de requête
+invalide ne sont pas retentées. La création de commentaires n'est jamais retentée.
+Une interruption annule les lectures, les attentes et les téléchargements en cours.
+
 La recherche parcourt toutes les pages de l'API Jira et déduplique les tickets par ID.
 Une erreur sur une page fait échouer la commande sans imprimer de résultats partiels.
 La recherche est limitée à 100 pages (100 tickets demandés par page). Si des pages
@@ -445,12 +455,20 @@ La commande récupère le ticket demandé, puis les tickets liés par parent, so
      --comments-since 2026-10-21T10:00:00Z --comments-until 2026-10-28T11:00:00Z \
      --comments-limit 5
 
+   # Réduire le contexte et éviter les appels au panneau de développement
+   ssk jira inspect PROJ-123 --description-lines 10 --comments-limit 5 \
+     --comment-chars 2000 --include-development=false --timeout 1m
+
    # Télécharger les pièces jointes et médias intégrés
    ssk jira inspect PROJ-123 --download-attachments ./jira-artifacts/PROJ-123
 
 **Options disponibles :**
 
 - ``--format markdown|json`` - Format de sortie (par défaut : ``markdown``)
+- ``--description-lines <n>`` - Premières lignes du texte normalisé de la description (0 : sans limite explicite)
+- ``--comment-chars <n>`` - Maximum de caractères Unicode par commentaire retenu (0 : sans limite explicite)
+- ``--include-development=false`` - Désactive tous les appels au panneau de développement (activés par défaut)
+- ``--timeout <durée>`` - Budget total de la commande, par exemple ``1m`` (par défaut : ``2m``)
 - ``--changes-since <date>`` / ``--changes-until <date>`` - Changements dans la période
 - ``--comments-since <date>`` / ``--comments-until <date>`` - Commentaires créés ou modifiés dans la période
 - ``--comments-limit <n>`` - Récupère tous les commentaires visibles et conserve les n plus récents après filtrage (0 : sans limite)
@@ -464,10 +482,13 @@ Les bornes sont des dates RFC 3339 avec fuseau explicite : ``since`` est inclus 
 omise, elle est fixée une seule fois au début de la commande. Les options sont
 validées avant l'accès aux services. Les limites négatives sont refusées.
 
-Sans ces options, l'inspection conserve son comportement habituel. Une période de
-changements active la pagination de l'historique. Une période de commentaires ou
-un ``--comments-limit`` explicite (même 0) active leur récupération complète via
-l'API dédiée. Ces options s'appliquent à tous les tickets sélectionnés par le
+Sans options de sélection ou de volume, l'inspection conserve son contenu habituel.
+Une période de changements active la pagination de l'historique. Une période de
+commentaires, un ``--comments-limit`` ou un ``--comment-chars`` explicite (même 0)
+active leur récupération complète via l'API dédiée. La limite de corps s'applique
+après le filtrage et la sélection, sans couper un caractère UTF-8. Les limites de
+volume négatives sont refusées. Les relations restent présentes même en contexte
+compact et avec ``--depth 0``. Ces options s'appliquent à tous les tickets sélectionnés par le
 parcours. Chaque source est limitée à 100 pages de 100 éléments demandés par
 ticket ; une pagination incohérente, une limite atteinte avec des pages restantes,
 un accès refusé ou une date indispensable invalide font échouer la commande sans
@@ -501,8 +522,12 @@ Une valeur indisponible vaut ``null`` ; une collection connue vide vaut ``[]``.
 profondeur/nombre demandées pour l'inspection. ``inspection.related_omitted`` et
 ``warnings`` signalent les relations non parcourues. Les métadonnées de relation
 restent présentes même avec ``--depth 0``. ``output_truncated`` distingue une coupe
-de sortie d'une limite de sélection ; le JSON ne coupe pas les corps, mais signale
-la sélection des commentaires limitée par ``--comments-limit``.
+de sortie d'une limite de sélection. ``description_truncated`` indique une coupe de
+la description. ``comments.selection_truncated`` et ``comments.body_output_truncated``
+distinguent la limite de nombre et la limite de corps ; chaque commentaire porte
+``body_truncated``. Les limites n'altèrent pas les nombres de données récupérées
+et de résultats correspondants. Le Markdown conserve ses budgets de sécurité et
+signale les coupes supplémentaires ; les limites à zéro ne les désactivent pas.
 Les dates invalides des tickets deviennent ``null`` avec un avertissement.
 
 Les commentaires intégrés, lorsqu'ils sont disponibles, portent

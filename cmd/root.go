@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"ssk/internal/version"
 
@@ -34,7 +37,9 @@ func Execute() error {
 	notice := make(chan string, 1)
 	go func() { notice <- updateNotice() }()
 
-	cmd, err := rootCmd.ExecuteC()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	cmd, err := rootCmd.ExecuteContextC(ctx)
 	// stderr keeps stdout (Markdown output) clean; update reports by itself.
 	if msg := <-notice; msg != "" && cmd.Name() != "update" && !strings.HasPrefix(cmd.Name(), "__complete") {
 		fmt.Fprintln(os.Stderr, msg)

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 
@@ -37,7 +36,7 @@ func runBriefing(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--max-tickets must be greater than 0")
 	}
 
-	jiraClient, cleanup, err := initJiraClient(verboseEnabled)
+	jiraClient, cleanup, err := initJiraClient(cmd, verboseEnabled)
 	if err != nil {
 		return err
 	}
@@ -47,16 +46,16 @@ func runBriefing(cmd *cobra.Command, args []string) error {
 	briefingService.SetMaxTickets(briefingMaxTickets)
 	briefingService.SetVerbose(verboseEnabled, os.Stderr)
 
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := jiraClient.Context()
 
 	context, err := briefingService.GenerateBriefing(ctx)
 	if err != nil {
 		return err
 	}
 
+	if contextErr := ctx.Err(); contextErr != nil {
+		return contextErr
+	}
 	_, err = fmt.Fprint(cmd.OutOrStdout(), context)
 	return err
 }
