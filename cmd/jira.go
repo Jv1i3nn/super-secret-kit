@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -55,7 +57,11 @@ func initJiraClient(cmd *cobra.Command, verboseEnabled bool) (*jira.Client, func
 		cancel()
 		return nil, nil, err
 	}
-	return client.WithContext(ctx), func() { cancel(); cleanup() }, nil
+	// Only intercept signals once interactive setup is complete. Other commands
+	// and setup prompts do not observe context cancellation and must retain the
+	// operating system's default termination behavior.
+	requestCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	return client.WithContext(requestCtx), func() { stop(); cancel(); cleanup() }, nil
 }
 
 func initJiraClientForWorkspace(verboseEnabled bool, workspace string) (*jira.Client, func(), error) {

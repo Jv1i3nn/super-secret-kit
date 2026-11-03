@@ -387,7 +387,9 @@ réseau transitoire, HTTP 408/429/500/502/503/504, avec une attente de 200 puis
 respecté si l'attente tient dans le budget restant et ne dépasse pas 30 secondes ;
 sinon la commande échoue. Les erreurs d'authentification, d'accès et de requête
 invalide ne sont pas retentées. La création de commentaires n'est jamais retentée.
-Une interruption annule les lectures, les attentes et les téléchargements en cours.
+Une interruption annule les lectures, les attentes et les téléchargements Jira en
+cours. Les questions de configuration et les autres commandes conservent leur
+comportement d'interruption habituel.
 
 La recherche parcourt toutes les pages de l'API Jira et déduplique les tickets par ID.
 Une erreur sur une page fait échouer la commande sans imprimer de résultats partiels.
