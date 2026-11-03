@@ -28,7 +28,7 @@ Fonctionnalités
 
 🔐 **Sécurité**
 --------------
-- Chiffrement AES-256-CBC pour le stockage des identifiants
+- Chiffrement AES-GCM pour les nouveaux identifiants, avec lecture du format AES-CBC historique
 - Base de données locale sécurisée avec données sensibles chiffrées
 - Stockage local des identifiants Jira, Tempo et Arkevia
 
@@ -194,7 +194,7 @@ Les anciennes versions de SSK et l'implémentation PHP ne peuvent pas lire le no
 URL Jira
 --------
 
-La première utilisation de ``ssk jira inspect``, ``ssk jira query``, ``ssk jira briefing``, ``ssk jira comment``, ``ssk logtime`` ou ``ssk autofill-time-gaps`` demande l'URL de votre site Jira et l'enregistre dans ``~/.ssk/.env`` :
+La première utilisation d'une commande ``ssk jira``, de ``ssk logtime`` ou de ``ssk autofill-time-gaps`` demande l'URL de votre site Jira et l'enregistre dans ``~/.ssk/.env`` :
 
 .. code-block:: dotenv
 
@@ -366,6 +366,19 @@ Compléter automatiquement les jours récents qui n'atteignent pas 8h dans Tempo
 
 - ``--dry-run`` - Afficher ce qui serait complété sans créer de worklogs Tempo
 
+Options communes Jira
+~~~~~~~~~~~~~~~~~~~~~
+
+Les commandes ``jira`` partagent ces options :
+
+- ``--workspace <nom>`` - Espace de travail Jira à cibler (par défaut : ``default``)
+- ``--timeout <durée>`` - Délai global des appels Jira (par défaut : ``2m``)
+
+Chaque requête HTTP est limitée à 30 secondes ; les lectures ont au maximum trois
+tentatives. La création de commentaires n'est jamais retentée. Une interruption
+annule les appels Jira en cours ; les questions de configuration et les autres
+commandes conservent leur comportement d'interruption habituel.
+
 ``jira query``
 ~~~~~~~~~~~~~~
 
@@ -380,13 +393,6 @@ Rechercher des tickets avec une requête JQL. Les résultats sont regroupés par
 ``--format json`` conserve l'ordre de recherche ; la sortie texte reste regroupée
 par statut. Les résultats sont paginés et dédupliqués. Une erreur ou un dépassement
 de 100 pages fait échouer la commande sans résultats partiels.
-
-Les commandes ``jira`` partagent ``--workspace <nom>`` (par défaut : ``default``)
-et ``--timeout <durée>`` (par défaut : ``2m``). Chaque requête HTTP est limitée à
-30 secondes ; les lectures ont au maximum trois tentatives. La création de
-commentaires n'est jamais retentée. Une interruption annule les appels Jira en
-cours ; les questions de configuration et les autres commandes conservent leur
-comportement d'interruption habituel.
 
 ``jira briefing``
 ~~~~~~~~~~~~~~~~~
@@ -412,7 +418,6 @@ La commande récupère les tickets Jira assignés à l'utilisateur courant, non 
 **Options disponibles :**
 
 - ``--max-tickets <n>`` - Nombre maximum de tickets Jira à inclure (par défaut : 10)
-- ``--workspace <nom>`` - Espace de travail Jira à cibler (par défaut : ``default``)
 
 ``jira inspect``
 ~~~~~~~~~~~~~~~~
@@ -460,7 +465,6 @@ La commande récupère le ticket demandé, puis les tickets liés par parent, so
 - ``--depth <n>`` - Profondeur de parcours des relations Jira (par défaut : 2)
 - ``--max-related <n>`` - Nombre maximum de tickets liés à récupérer, hors ticket racine (par défaut : 10)
 - ``--download-attachments <répertoire>`` - Télécharge les pièces jointes Jira et indique les chemins locaux dans la sortie
-- ``--workspace <nom>`` - Espace de travail Jira à cibler (par défaut : ``default``)
 
 Les bornes sont des dates RFC 3339 avec fuseau explicite : ``since`` est inclus,
 ``until`` exclu. Une borne haute exige la borne basse correspondante ; omise, elle
@@ -494,16 +498,19 @@ courants, changements et commentaires datés. La sortie par défaut est en Markd
 
 .. code-block:: bash
 
+   # Activité depuis une date, en Markdown
+   ssk jira activity --since 2026-11-01T00:00:00Z
+
+   # Export JSON compact sur une période
    ssk jira activity --since 2026-10-21T10:00:00Z --until 2026-10-28T11:00:00Z \
      --format json --workers 6 --description-lines 10 --comments-limit 5 \
      --comment-chars 2000 --include-development=false
 
 ``--since`` est obligatoire, en RFC 3339 avec fuseau. ``--until`` est exclu et vaut
 le début de la commande s'il est omis. ``--workers`` accepte 1 à 32 récupérations
-simultanées (6 par défaut). Les contrôles de volume d'``inspect``, ``--workspace``
-et ``--timeout`` sont aussi disponibles. Toutes les sources utilisent cette même
-période ; les bornes indépendantes ``--changes-*``/``--comments-since/until`` ne
-sont pas acceptées.
+simultanées (6 par défaut). Les contrôles de volume d'``inspect`` sont aussi
+disponibles. Toutes les sources utilisent cette même période ; les bornes
+indépendantes ``--changes-*``/``--comments-since/until`` ne sont pas acceptées.
 
 La recherche conserve les candidats mis à jour depuis la borne basse, y compris
 après ``until``, puis filtre leurs événements sur la période. Les candidats sans
